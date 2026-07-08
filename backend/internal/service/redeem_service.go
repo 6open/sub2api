@@ -431,6 +431,19 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 		return nil, fmt.Errorf("get user: %w", err)
 	}
 
+	isLDCBalanceCode := false
+	var ldcMeta ldcCodeMetadata
+	var ldcCreditUSD float64
+	if redeemCode.Type == RedeemTypeBalance {
+		if meta, ok := parseLDCCodeMetadata(redeemCode.Notes); ok {
+			isLDCBalanceCode = true
+			ldcMeta = meta
+			if redeemCode.Value <= 0 {
+				return nil, infraerrors.BadRequest("LDC_REDEEM_CODE_INVALID", "ldc redeem code value must be greater than zero")
+			}
+		}
+	}
+
 	// 使用数据库事务保证兑换码标记与权益发放的原子性
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
@@ -440,6 +453,18 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 
 	// 将事务放入 context，使 repository 方法能够使用同一事务
 	txCtx := dbent.NewTxContext(ctx, tx)
+	txClient := tx.Client()
+
+	if isLDCBalanceCode {
+		if err := s.validateLDCUserLinuxDoBinding(txCtx, txClient, userID, ldcMeta); err != nil {
+			return nil, err
+		}
+		issuedUSD, err := s.issuedLDCUSDForUser(txCtx, txClient, userID)
+		if err != nil {
+			return nil, fmt.Errorf("calculate user ldc issued quota: %w", err)
+		}
+		ldcCreditUSD = calculateLDCCodeCreditUSD(redeemCode.Value, issuedUSD)
+	}
 
 	// 【关键】先标记兑换码为已使用，确保并发安全
 	// 利用数据库乐观锁（WHERE status = 'unused'）保证原子性
@@ -454,12 +479,22 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 	switch redeemCode.Type {
 	case RedeemTypeBalance:
 		amount := redeemCode.Value
+		if isLDCBalanceCode {
+			amount = ldcCreditUSD
+			redeemCode.Notes = mergeLDCCodeRedemptionNotes(redeemCode.Notes, userID, redeemCode.Value, amount)
+			if _, err := txClient.RedeemCode.UpdateOneID(redeemCode.ID).SetNotes(redeemCode.Notes).Save(txCtx); err != nil {
+				return nil, fmt.Errorf("update ldc redeem notes: %w", err)
+			}
+		}
 		// 负数为退款扣减，余额最低为 0
 		if amount < 0 && user.Balance+amount < 0 {
 			amount = -user.Balance
 		}
 		if err := s.userRepo.UpdateBalance(txCtx, userID, amount); err != nil {
 			return nil, fmt.Errorf("update user balance: %w", err)
+		}
+		if isLDCBalanceCode {
+			redeemCode.Value = amount
 		}
 
 	case RedeemTypeConcurrency:
@@ -516,6 +551,9 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 	redeemCode, err = s.redeemRepo.GetByID(ctx, redeemCode.ID)
 	if err != nil {
 		return nil, fmt.Errorf("get updated redeem code: %w", err)
+	}
+	if isLDCBalanceCode {
+		redeemCode.Value = ldcCreditUSD
 	}
 
 	return redeemCode, nil

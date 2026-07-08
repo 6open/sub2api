@@ -1133,8 +1133,9 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 	}
 
 	codes := make([]RedeemCode, 0, input.Count)
+	prefix := redeemCodePrefixForGenerate(input.Type, input.Notes)
 	for i := 0; i < input.Count; i++ {
-		codeValue, err := GenerateRedeemCode()
+		codeValue, err := GeneratePrefixedRedeemCode(prefix)
 		if err != nil {
 			return nil, err
 		}
@@ -1143,6 +1144,7 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 			Type:      input.Type,
 			Value:     input.Value,
 			Status:    StatusUnused,
+			Notes:     input.Notes,
 			ExpiresAt: input.ExpiresAt,
 		}
 		// 订阅类型专用字段

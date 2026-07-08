@@ -44,6 +44,24 @@
               <p class="input-hint">
                 {{ t('redeem.redeemCodeHint') }}
               </p>
+              <div
+                class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/20 dark:text-amber-200"
+              >
+                <div class="flex items-start gap-3">
+                  <Icon
+                    name="infoCircle"
+                    size="sm"
+                    class="mt-0.5 flex-shrink-0 text-amber-500 dark:text-amber-300"
+                  />
+                  <div>
+                    <p class="font-semibold">{{ t('redeem.codeTypeTipTitle') }}</p>
+                    <ul class="mt-2 list-inside list-disc space-y-1">
+                      <li>{{ t('redeem.generalCodeTip') }}</li>
+                      <li>{{ t('redeem.ldcCodeTip') }}</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <button
@@ -468,9 +486,13 @@ const handleRedeem = async () => {
     // Show success toast
     appStore.showSuccess(t('redeem.codeRedeemSuccess'))
   } catch (error: any) {
-    errorMessage.value = error.response?.data?.detail || t('redeem.failedToRedeem')
+    errorMessage.value =
+      error.response?.data?.detail ||
+      error.response?.data?.message ||
+      error.message ||
+      t('redeem.failedToRedeem')
 
-    appStore.showError(t('redeem.redeemFailed'))
+    appStore.showError(errorMessage.value || t('redeem.redeemFailed'))
   } finally {
     submitting.value = false
   }

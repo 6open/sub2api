@@ -113,24 +113,27 @@
             </div>
           </template>
 
-          <template #cell-type="{ value }">
+          <template #cell-type="{ value, row }">
             <span
               :class="[
                 'badge',
-                value === 'balance'
-                  ? 'badge-success'
-                  : value === 'subscription'
-                    ? 'badge-warning'
-                    : 'badge-primary'
+                isLDCRedeemCode(row)
+                  ? 'badge-warning'
+                  : value === 'balance'
+                    ? 'badge-success'
+                    : value === 'subscription'
+                      ? 'badge-warning'
+                      : 'badge-primary'
               ]"
             >
-              {{ t('admin.redeem.types.' + value) }}
+              {{ isLDCRedeemCode(row) ? t('admin.redeem.ldc') : t('admin.redeem.types.' + value) }}
             </span>
           </template>
 
           <template #cell-value="{ value, row }">
             <span class="text-sm font-medium text-gray-900 dark:text-white">
-              <template v-if="row.type === 'balance'">${{ value.toFixed(2) }}</template>
+              <template v-if="isLDCRedeemCode(row)">{{ value }} LDC</template>
+              <template v-else-if="row.type === 'balance'">${{ value.toFixed(2) }}</template>
               <template v-else-if="row.type === 'subscription'">
                 {{ row.validity_days || 30 }} {{ t('admin.redeem.days') }}
                 <span v-if="row.group" class="ml-1 text-xs text-gray-500 dark:text-gray-400"
@@ -287,14 +290,10 @@
               <label class="input-label">{{ t('admin.redeem.codeType') }}</label>
               <Select v-model="generateForm.type" :options="typeOptions" />
             </div>
-            <!-- 余额/并发类型：显示数值输入 -->
+            <!-- 余额/LDC/并发类型：显示数值输入 -->
             <div v-if="generateForm.type !== 'subscription' && generateForm.type !== 'invitation'">
               <label class="input-label">
-                {{
-                  generateForm.type === 'balance'
-                    ? t('admin.redeem.amount')
-                    : t('admin.redeem.columns.value')
-                }}
+                {{ generateValueLabel }}
               </label>
               <input
                 v-model.number="generateForm.value"
@@ -304,6 +303,9 @@
                 required
                 class="input"
               />
+              <p v-if="generateForm.type === 'ldc'" class="mt-1 text-xs text-amber-600 dark:text-amber-300">
+                {{ t('admin.redeem.ldcHint') }}
+              </p>
             </div>
             <!-- 邀请码类型：显示提示信息 -->
             <div v-if="generateForm.type === 'invitation'" class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
@@ -733,6 +735,7 @@ const columns = computed<Column[]>(() => [
 
 const typeOptions = computed(() => [
   { value: 'balance', label: t('admin.redeem.balance') },
+  { value: 'ldc', label: t('admin.redeem.ldc') },
   { value: 'concurrency', label: t('admin.redeem.concurrency') },
   { value: 'subscription', label: t('admin.redeem.subscription') },
   { value: 'invitation', label: t('admin.redeem.invitation') }
@@ -818,6 +821,7 @@ const batchUpdateForm = reactive({
 })
 
 type RedeemCodeExpiryOption = 'never' | '1' | '3' | '7' | 'custom'
+type GenerateRedeemCodeFormType = RedeemCodeType | 'ldc'
 
 const redeemCodeExpiryOptions = computed<{ value: RedeemCodeExpiryOption; label: string }[]>(() => [
   { value: 'never', label: t('admin.redeem.neverExpires') },
@@ -828,7 +832,7 @@ const redeemCodeExpiryOptions = computed<{ value: RedeemCodeExpiryOption; label:
 ])
 
 const generateForm = reactive({
-  type: 'balance' as RedeemCodeType,
+  type: 'balance' as GenerateRedeemCodeFormType,
   value: 10,
   count: 1,
   group_id: null as number | null,
@@ -843,11 +847,29 @@ watch(
   (newType) => {
     if (newType === 'invitation') {
       generateForm.value = 0
+    } else if (newType === 'ldc') {
+      generateForm.value = 100
     } else if (generateForm.value === 0) {
       generateForm.value = 10
     }
   }
 )
+
+const isLDCRedeemCode = (code: RedeemCode) => {
+  if (code.type !== 'balance' || !code.notes) return false
+  try {
+    const parsed = JSON.parse(code.notes)
+    return parsed?.code_kind === 'ldc'
+  } catch {
+    return code.notes.includes('"code_kind":"ldc"') || code.notes.includes('"code_kind": "ldc"')
+  }
+}
+
+const generateValueLabel = computed(() => {
+  if (generateForm.type === 'ldc') return t('admin.redeem.ldcAmount')
+  if (generateForm.type === 'balance') return t('admin.redeem.amount')
+  return t('admin.redeem.columns.value')
+})
 
 const buildRedeemQueryFilters = () => ({
   type: (filters.type || undefined) as RedeemCodeType | undefined,
@@ -1032,13 +1054,16 @@ const handleGenerateCodes = async () => {
 
   generating.value = true
   try {
+    const apiType: RedeemCodeType = generateForm.type === 'ldc' ? 'balance' : generateForm.type
+    const notes = generateForm.type === 'ldc' ? '{"code_kind":"ldc"}' : undefined
     const result = await adminAPI.redeem.generate(
       generateForm.count,
-      generateForm.type,
+      apiType,
       generateForm.value,
       generateForm.type === 'subscription' ? generateForm.group_id : undefined,
       generateForm.type === 'subscription' ? generateForm.validity_days : undefined,
-      expiresInDays
+      expiresInDays,
+      notes
     )
     showGenerateDialog.value = false
     generatedCodes.value = result

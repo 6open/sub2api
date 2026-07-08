@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -30,7 +31,7 @@ import (
 )
 
 const (
-	linuxDoOAuthCookiePath         = "/api/v1/auth/oauth/linuxdo"
+	linuxDoOAuthCookiePath         = "/api"
 	oauthBindAccessTokenCookiePath = "/api/v1/auth/oauth"
 	linuxDoOAuthStateCookieName    = "linuxdo_oauth_state"
 	linuxDoOAuthVerifierCookie     = "linuxdo_oauth_verifier"
@@ -65,6 +66,33 @@ type linuxDoTokenExchangeError struct {
 	Body                string
 }
 
+type linuxDoOAuthSignedState struct {
+	Nonce             string `json:"nonce"`
+	RedirectTo        string `json:"redirect_to,omitempty"`
+	Intent            string `json:"intent,omitempty"`
+	BrowserSessionKey string `json:"browser_session_key,omitempty"`
+	CodeVerifier      string `json:"code_verifier,omitempty"`
+	BindUserCookie    string `json:"bind_user_cookie,omitempty"`
+	ExpiresAt         int64  `json:"exp"`
+}
+
+// linuxDoShopHandoffPayload is a short-lived signed assertion that transfers
+// the currently logged-in sub2api user identity to the LinuxDO Credit shop.
+type linuxDoShopHandoffPayload struct {
+	UserID    int64  `json:"user_id"`
+	Email     string `json:"email,omitempty"`
+	ExpiresAt int64  `json:"exp"`
+}
+
+type linuxDoShopHandoffStartResponse struct {
+	Token string `json:"token"`
+	URL   string `json:"url"`
+}
+
+type linuxDoShopHandoffVerifyRequest struct {
+	Token string `json:"token"`
+}
+
 func (e *linuxDoTokenExchangeError) Error() string {
 	if e == nil {
 		return ""
@@ -79,6 +107,54 @@ func (e *linuxDoTokenExchangeError) Error() string {
 	return strings.Join(parts, " ")
 }
 
+// StartLinuxDoShopHandoff returns a short-lived signed handoff URL for the LinuxDO Credit shop.
+// POST /api/v1/auth/linuxdo-shop/handoff/start
+func (h *AuthHandler) StartLinuxDoShopHandoff(c *gin.Context) {
+	subject, ok := servermiddleware.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	user, err := h.userService.GetByID(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	token, err := h.signLinuxDoShopHandoff(linuxDoShopHandoffPayload{
+		UserID:    user.ID,
+		Email:     user.Email,
+		ExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
+	})
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("LINUXDO_SHOP_HANDOFF_SIGN_FAILED", "failed to create shop handoff token").WithCause(err))
+		return
+	}
+	shopURL := "https://lklb.top/buy?handoff=" + url.QueryEscape(token)
+	response.Success(c, linuxDoShopHandoffStartResponse{Token: token, URL: shopURL})
+}
+
+// VerifyLinuxDoShopHandoff validates a handoff token for the local code-shop process.
+// POST /api/v1/auth/linuxdo-shop/handoff/verify
+func (h *AuthHandler) VerifyLinuxDoShopHandoff(c *gin.Context) {
+	var req linuxDoShopHandoffVerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	payload, ok := h.verifyLinuxDoShopHandoff(req.Token)
+	if !ok {
+		response.ErrorFrom(c, infraerrors.Unauthorized("LINUXDO_SHOP_HANDOFF_INVALID", "invalid or expired handoff token"))
+		return
+	}
+	if h.userService != nil {
+		if _, err := h.userService.GetByID(c.Request.Context(), payload.UserID); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+	}
+	response.Success(c, payload)
+}
+
 // LinuxDoOAuthStart 启动 LinuxDo Connect OAuth 登录流程。
 // GET /api/v1/auth/oauth/linuxdo/start?redirect=/dashboard
 func (h *AuthHandler) LinuxDoOAuthStart(c *gin.Context) {
@@ -88,7 +164,7 @@ func (h *AuthHandler) LinuxDoOAuthStart(c *gin.Context) {
 		return
 	}
 
-	state, err := oauth.GenerateState()
+	nonce, err := oauth.GenerateState()
 	if err != nil {
 		response.ErrorFrom(c, infraerrors.InternalServer("OAUTH_STATE_GEN_FAILED", "failed to generate oauth state").WithCause(err))
 		return
@@ -106,15 +182,10 @@ func (h *AuthHandler) LinuxDoOAuthStart(c *gin.Context) {
 	}
 
 	secureCookie := isRequestHTTPS(c)
-	setCookie(c, linuxDoOAuthStateCookieName, encodeCookieValue(state), linuxDoOAuthCookieMaxAgeSec, secureCookie)
-	setCookie(c, linuxDoOAuthRedirectCookie, encodeCookieValue(redirectTo), linuxDoOAuthCookieMaxAgeSec, secureCookie)
 	intent := normalizeOAuthIntent(c.Query("intent"))
-	setCookie(c, linuxDoOAuthIntentCookieName, encodeCookieValue(intent), linuxDoOAuthCookieMaxAgeSec, secureCookie)
-	captureOAuthPromoCode(c, secureCookie)
-	setOAuthPendingBrowserCookie(c, browserSessionKey, secureCookie)
-	clearOAuthPendingSessionCookie(c, secureCookie)
+	bindCookieValue := ""
 	if intent == oauthIntentBindCurrentUser {
-		bindCookieValue, err := h.buildOAuthBindUserCookieFromContext(c)
+		bindCookieValue, err = h.buildOAuthBindUserCookieFromContext(c)
 		if err != nil {
 			response.ErrorFrom(c, err)
 			return
@@ -125,15 +196,37 @@ func (h *AuthHandler) LinuxDoOAuthStart(c *gin.Context) {
 	}
 
 	codeChallenge := ""
+	codeVerifier := ""
 	if cfg.UsePKCE {
-		verifier, err := oauth.GenerateCodeVerifier()
+		codeVerifier, err = oauth.GenerateCodeVerifier()
 		if err != nil {
 			response.ErrorFrom(c, infraerrors.InternalServer("OAUTH_PKCE_GEN_FAILED", "failed to generate pkce verifier").WithCause(err))
 			return
 		}
-		codeChallenge = oauth.GenerateCodeChallenge(verifier)
-		setCookie(c, linuxDoOAuthVerifierCookie, encodeCookieValue(verifier), linuxDoOAuthCookieMaxAgeSec, secureCookie)
+		codeChallenge = oauth.GenerateCodeChallenge(codeVerifier)
+		setCookie(c, linuxDoOAuthVerifierCookie, encodeCookieValue(codeVerifier), linuxDoOAuthCookieMaxAgeSec, secureCookie)
 	}
+
+	state, err := h.signLinuxDoOAuthState(linuxDoOAuthSignedState{
+		Nonce:             nonce,
+		RedirectTo:        redirectTo,
+		Intent:            intent,
+		BrowserSessionKey: browserSessionKey,
+		CodeVerifier:      codeVerifier,
+		BindUserCookie:    bindCookieValue,
+		ExpiresAt:         time.Now().Add(time.Duration(linuxDoOAuthCookieMaxAgeSec) * time.Second).Unix(),
+	})
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("OAUTH_STATE_SIGN_FAILED", "failed to sign oauth state").WithCause(err))
+		return
+	}
+
+	setCookie(c, linuxDoOAuthStateCookieName, encodeCookieValue(state), linuxDoOAuthCookieMaxAgeSec, secureCookie)
+	setCookie(c, linuxDoOAuthRedirectCookie, encodeCookieValue(redirectTo), linuxDoOAuthCookieMaxAgeSec, secureCookie)
+	setCookie(c, linuxDoOAuthIntentCookieName, encodeCookieValue(intent), linuxDoOAuthCookieMaxAgeSec, secureCookie)
+	captureOAuthPromoCode(c, secureCookie)
+	setOAuthPendingBrowserCookie(c, browserSessionKey, secureCookie)
+	clearOAuthPendingSessionCookie(c, secureCookie)
 
 	redirectURI := strings.TrimSpace(cfg.RedirectURL)
 	if redirectURI == "" {
@@ -186,28 +279,47 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 		clearOAuthPromoCodeCookie(c, secureCookie)
 	}()
 
+	signedState, signedStateOK := h.verifyLinuxDoOAuthState(state)
+	stateBindUserCookie := ""
+	if signedStateOK {
+		stateBindUserCookie = signedState.BindUserCookie
+	}
 	expectedState, err := readCookieDecoded(c, linuxDoOAuthStateCookieName)
 	if err != nil || expectedState == "" || state != expectedState {
-		redirectOAuthError(c, frontendCallback, "invalid_state", "invalid oauth state", "")
-		return
+		if !signedStateOK {
+			redirectOAuthError(c, frontendCallback, "invalid_state", "invalid oauth state", "")
+			return
+		}
 	}
 
 	redirectTo, _ := readCookieDecoded(c, linuxDoOAuthRedirectCookie)
+	if strings.TrimSpace(redirectTo) == "" && signedStateOK {
+		redirectTo = signedState.RedirectTo
+	}
 	redirectTo = sanitizeFrontendRedirectPath(redirectTo)
 	if redirectTo == "" {
 		redirectTo = linuxDoOAuthDefaultRedirectTo
 	}
 	browserSessionKey, _ := readOAuthPendingBrowserCookie(c)
+	if strings.TrimSpace(browserSessionKey) == "" && signedStateOK {
+		browserSessionKey = signedState.BrowserSessionKey
+	}
 	if strings.TrimSpace(browserSessionKey) == "" {
 		redirectOAuthError(c, frontendCallback, "missing_browser_session", "missing oauth browser session", "")
 		return
 	}
 	intent, _ := readCookieDecoded(c, linuxDoOAuthIntentCookieName)
+	if strings.TrimSpace(intent) == "" && signedStateOK {
+		intent = signedState.Intent
+	}
 	intent = normalizeOAuthIntent(intent)
 
 	codeVerifier := ""
 	if cfg.UsePKCE {
 		codeVerifier, _ = readCookieDecoded(c, linuxDoOAuthVerifierCookie)
+		if strings.TrimSpace(codeVerifier) == "" && signedStateOK {
+			codeVerifier = signedState.CodeVerifier
+		}
 		if codeVerifier == "" {
 			redirectOAuthError(c, frontendCallback, "missing_verifier", "missing pkce verifier", "")
 			return
@@ -270,7 +382,7 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 		upstreamClaims["compat_email"] = compatEmail
 	}
 	if intent == oauthIntentBindCurrentUser {
-		targetUserID, err := h.readOAuthBindUserIDFromCookie(c, linuxDoOAuthBindUserCookieName)
+		targetUserID, err := h.readOAuthBindUserID(c, linuxDoOAuthBindUserCookieName, stateBindUserCookie)
 		if err != nil {
 			redirectOAuthError(c, frontendCallback, "invalid_state", "invalid oauth bind target", "")
 			return
@@ -326,7 +438,11 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 	}
 	emailVerificationRequired := h != nil && h.authService != nil && h.authService.IsEmailVerifyEnabled(c.Request.Context())
 	forceEmailOnSignup := h.isForceEmailOnThirdPartySignup(c.Request.Context())
-	if compatEmailUser == nil && !emailVerificationRequired && !forceEmailOnSignup {
+	// LinuxDo provides a stable, provider-verified subject. When no existing
+	// local email account must be adopted and the admin has not explicitly
+	// forced third-party signups to bind an email, allow direct registration
+	// even if ordinary email signup verification is enabled.
+	if compatEmailUser == nil && !forceEmailOnSignup {
 		if err := h.ensureBackendModeAllowsNewUserLogin(c.Request.Context()); err != nil {
 			redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
 			return
@@ -499,14 +615,14 @@ func (h *AuthHandler) createLinuxDoOAuthChoicePendingSession(
 }
 
 type completeLinuxDoOAuthRequest struct {
-	InvitationCode   string `json:"invitation_code" binding:"required"`
+	InvitationCode   string `json:"invitation_code,omitempty"`
 	AffCode          string `json:"aff_code,omitempty"`
 	AdoptDisplayName *bool  `json:"adopt_display_name,omitempty"`
 	AdoptAvatar      *bool  `json:"adopt_avatar,omitempty"`
 }
 
-// CompleteLinuxDoOAuthRegistration completes a pending OAuth registration by validating
-// the invitation code and creating the user account.
+// CompleteLinuxDoOAuthRegistration completes a pending OAuth registration. The
+// invitation code is only required when invitation-code registration is enabled.
 // POST /api/v1/auth/oauth/linuxdo/complete-registration
 func (h *AuthHandler) CompleteLinuxDoOAuthRegistration(c *gin.Context) {
 	var req completeLinuxDoOAuthRequest
@@ -588,7 +704,7 @@ func (h *AuthHandler) CompleteLinuxDoOAuthRegistration(c *gin.Context) {
 		c.Request.Context(),
 		email,
 		username,
-		req.InvitationCode,
+		strings.TrimSpace(req.InvitationCode),
 		req.AffCode,
 		pendingOAuthPromoCode(session),
 		"linuxdo",
@@ -1229,6 +1345,104 @@ func (h *AuthHandler) oauthBindCookieSecret() string {
 		return ""
 	}
 	return strings.TrimSpace(h.cfg.JWT.Secret)
+}
+
+func (h *AuthHandler) signLinuxDoOAuthState(payload linuxDoOAuthSignedState) (string, error) {
+	secret := h.oauthBindCookieSecret()
+	if secret == "" {
+		return "", errors.New("missing oauth state secret")
+	}
+	if strings.TrimSpace(payload.Nonce) == "" || payload.ExpiresAt <= 0 {
+		return "", errors.New("invalid oauth state payload")
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	body := base64.RawURLEncoding.EncodeToString(raw)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(body))
+	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return body + "." + sig, nil
+}
+
+func (h *AuthHandler) verifyLinuxDoOAuthState(value string) (*linuxDoOAuthSignedState, bool) {
+	secret := h.oauthBindCookieSecret()
+	body, sig, ok := strings.Cut(strings.TrimSpace(value), ".")
+	if secret == "" || !ok || body == "" || sig == "" {
+		return nil, false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(body))
+	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(sig), []byte(expected)) {
+		return nil, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(body)
+	if err != nil {
+		return nil, false
+	}
+	var payload linuxDoOAuthSignedState
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, false
+	}
+	if strings.TrimSpace(payload.Nonce) == "" || payload.ExpiresAt < time.Now().Unix() {
+		return nil, false
+	}
+	return &payload, true
+}
+
+func (h *AuthHandler) signLinuxDoShopHandoff(payload linuxDoShopHandoffPayload) (string, error) {
+	secret := h.oauthBindCookieSecret()
+	if secret == "" {
+		return "", errors.New("missing linuxdo shop handoff secret")
+	}
+	if payload.UserID <= 0 || payload.ExpiresAt <= 0 {
+		return "", errors.New("invalid linuxdo shop handoff payload")
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	body := base64.RawURLEncoding.EncodeToString(raw)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte("linuxdo-shop-handoff." + body))
+	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return body + "." + sig, nil
+}
+
+func (h *AuthHandler) verifyLinuxDoShopHandoff(value string) (*linuxDoShopHandoffPayload, bool) {
+	secret := h.oauthBindCookieSecret()
+	body, sig, ok := strings.Cut(strings.TrimSpace(value), ".")
+	if secret == "" || !ok || body == "" || sig == "" {
+		return nil, false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte("linuxdo-shop-handoff." + body))
+	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(sig), []byte(expected)) {
+		return nil, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(body)
+	if err != nil {
+		return nil, false
+	}
+	var payload linuxDoShopHandoffPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, false
+	}
+	if payload.UserID <= 0 || payload.ExpiresAt < time.Now().Unix() {
+		return nil, false
+	}
+	return &payload, true
+}
+
+func (h *AuthHandler) readOAuthBindUserID(c *gin.Context, cookieName string, fallbackCookieValue string) (int64, error) {
+	value, err := readCookieDecoded(c, cookieName)
+	if err != nil || strings.TrimSpace(value) == "" {
+		value = strings.TrimSpace(fallbackCookieValue)
+	}
+	return parseOAuthBindUserCookieValue(value, h.oauthBindCookieSecret())
 }
 
 func buildOAuthBindUserCookieValue(userID int64, secret string) (string, error) {

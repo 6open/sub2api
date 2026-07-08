@@ -1438,6 +1438,7 @@ export interface GenerateRedeemCodesRequest {
   value: number
   group_id?: number | null // 订阅类型专用
   validity_days?: number // 订阅类型专用
+  notes?: string
   expires_at?: string | null
   expires_in_days?: number
 }

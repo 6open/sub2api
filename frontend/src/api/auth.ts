@@ -281,6 +281,17 @@ export function persistOAuthTokenContext(tokens: Partial<OAuthTokenResponse>): v
   }
 }
 
+
+export interface LinuxDoShopHandoffResponse {
+  token: string
+  url: string
+}
+
+export async function startLinuxDoShopHandoff(): Promise<LinuxDoShopHandoffResponse> {
+  const { data } = await apiClient.post<LinuxDoShopHandoffResponse>('/auth/linuxdo-shop/handoff/start')
+  return data
+}
+
 export async function prepareOAuthBindAccessTokenCookie(): Promise<void> {
   if (!getAuthToken()) {
     return

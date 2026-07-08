@@ -262,6 +262,9 @@ export default {
       codesCreated: '{count} redeem code(s) created',
       codeType: 'Code Type',
       amount: 'Amount ($)',
+      ldc: 'LDC Redeem Code',
+      ldcAmount: 'LDC Amount',
+      ldcHint: 'LDC codes use LinuxDO tiered rates: first $10 at 10:1, then 50:1.',
       value: 'Value',
       count: 'Count',
       generating: 'Generating...',
@@ -284,6 +287,7 @@ export default {
         concurrency: 'Concurrency',
         subscription: 'Subscription',
         invitation: 'Invitation',
+        ldc: 'LDC Redeem Code',
         // Admin adjustment types (created when admin modifies user balance/concurrency)
         admin_balance: 'Balance (Admin)',
         admin_concurrency: 'Concurrency (Admin)'

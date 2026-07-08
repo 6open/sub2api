@@ -170,3 +170,28 @@ func TestResolveRedeemCodeExpiresAt_RejectsConflictingInputs(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, expiresAt)
 }
+
+func TestGenerateRedeemCodesPassesNotesToService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	adminSvc := newStubAdminService()
+	h := &RedeemHandler{adminService: adminSvc}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := map[string]any{
+		"count": 1,
+		"type":  "balance",
+		"value": 100,
+		"notes": `{"code_kind":"ldc"}`,
+	}
+	jsonBytes, err := json.Marshal(body)
+	require.NoError(t, err)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/admin/redeem-codes/generate", bytes.NewReader(jsonBytes))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Generate(c)
+
+	require.NotEqual(t, http.StatusBadRequest, w.Code)
+	require.NotNil(t, adminSvc.lastGenerateRedeemCodesInput)
+	require.Equal(t, `{"code_kind":"ldc"}`, adminSvc.lastGenerateRedeemCodesInput.Notes)
+}

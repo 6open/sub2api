@@ -57,3 +57,18 @@ func TestRedeemCodeExpiry(t *testing.T) {
 		})
 	}
 }
+
+func TestGeneratePrefixedRedeemCodeKeepsHyphenatedPrefixWithinMaxLength(t *testing.T) {
+	code, err := GeneratePrefixedRedeemCode("LDC")
+	require.NoError(t, err)
+	require.Len(t, code, 32)
+	require.Regexp(t, `^LDC-[A-F0-9]{28}$`, code)
+}
+
+func TestRedeemCodePrefixForGenerateDistinguishesKinds(t *testing.T) {
+	require.Equal(t, "LDC", redeemCodePrefixForGenerate(RedeemTypeBalance, `{"code_kind":"ldc"}`))
+	require.Equal(t, "GEN", redeemCodePrefixForGenerate(RedeemTypeBalance, ""))
+	require.Equal(t, "CON", redeemCodePrefixForGenerate(RedeemTypeConcurrency, ""))
+	require.Equal(t, "SUB", redeemCodePrefixForGenerate(RedeemTypeSubscription, ""))
+	require.Equal(t, "INV", redeemCodePrefixForGenerate(RedeemTypeInvitation, ""))
+}

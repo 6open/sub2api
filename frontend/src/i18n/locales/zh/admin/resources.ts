@@ -257,6 +257,7 @@ export default {
         concurrency: '并发数',
         subscription: '订阅',
         invitation: '邀请码',
+        ldc: 'LDC兑换码',
         // 管理员在用户管理页面调整余额/并发时产生的记录
         admin_balance: '余额（管理员）',
         admin_concurrency: '并发数（管理员）'
@@ -298,6 +299,9 @@ export default {
       codesCreated: '已创建 {count} 个兑换码',
       codeType: '类型',
       amount: '金额 ($)',
+      ldc: 'LDC兑换码',
+      ldcAmount: 'LDC 数量',
+      ldcHint: 'LDC 码按 LinuxDO 账号阶梯汇率兑换：前 10 刀 10:1，之后 50:1。',
       value: '面值',
       count: '数量',
       generate: '生成',

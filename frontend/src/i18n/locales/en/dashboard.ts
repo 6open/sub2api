@@ -559,6 +559,10 @@ export default {
     codeRule2: 'Codes may add balance, increase concurrency, or grant trial access',
     codeRule3: 'Contact support if you have issues redeeming a code',
     codeRule4: 'Balance and concurrency updates are immediate',
+    codeTypeTipTitle: 'Redeem code type notes',
+    generalCodeTip: 'General codes: add balance, concurrency, or subscriptions directly by the code value.',
+    ldcCodeTip:
+      "LDC codes: converted by this lklb account's LDC redemption tiers. The first $10 uses 10 LDC = $1, and the excess uses 50 LDC = $1.",
     recentActivity: 'Recent Activity',
     historyWillAppear: 'Your redemption history will appear here',
     balanceAddedRedeem: 'Balance Added (Redeem)',

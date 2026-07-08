@@ -37,6 +37,61 @@
               <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
               <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
             </div>
+            <div class="rounded-3xl border border-sky-200 bg-gradient-to-r from-sky-50 via-white to-indigo-50 p-5 shadow-sm dark:border-sky-800/60 dark:from-sky-950/30 dark:via-dark-800 dark:to-indigo-950/20">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="text-base font-bold text-gray-950 dark:text-white">link-lable交流群</p>
+                  <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">点击链接加入群聊，获取充值、兑换和使用帮助。</p>
+                </div>
+                <a
+                  class="btn btn-secondary inline-flex shrink-0 items-center justify-center rounded-2xl px-4 py-2"
+                  href="https://qm.qq.com/q/dqWgFGYbD2"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  点击链接加入群聊
+                </a>
+              </div>
+            </div>
+            <div class="grid gap-4 lg:grid-cols-2">
+              <div class="relative min-h-[210px] overflow-hidden rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-6 shadow-sm dark:border-emerald-800/60 dark:from-emerald-950/30 dark:via-dark-800 dark:to-cyan-950/20">
+                <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-300/20 blur-2xl"></div>
+                <div class="relative flex h-full flex-col justify-between gap-5 sm:flex-row sm:items-center">
+                  <div>
+                    <div class="mb-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200">LinuxDO 积分购买</div>
+                    <p class="text-2xl font-extrabold tracking-tight text-gray-950 dark:text-white">前 10刀额度享特惠</p>
+                    <p class="mt-2 text-base font-semibold text-emerald-700 dark:text-emerald-300">10 LDC = 1刀</p>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">支持自定义额度，超出后按 50 LDC = 1刀，点击购买时再认证 LinuxDO 账号。</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn inline-flex shrink-0 items-center justify-center rounded-2xl px-5 py-3 text-base font-semibold shadow-lg shadow-emerald-500/20"
+                    @click="handleLinuxDoShopPurchase"
+                  >
+                    立即购买
+                  </button>
+                </div>
+              </div>
+              <div class="relative min-h-[210px] overflow-hidden rounded-3xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-rose-50 p-6 shadow-sm dark:border-orange-800/60 dark:from-orange-950/30 dark:via-dark-800 dark:to-rose-950/20">
+                <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-orange-300/20 blur-2xl"></div>
+                <div class="relative flex h-full flex-col justify-between gap-5 sm:flex-row sm:items-center">
+                  <div>
+                    <div class="mb-3 inline-flex rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700 dark:bg-orange-900/50 dark:text-orange-200">闲鱼客服购买</div>
+                    <p class="text-2xl font-extrabold tracking-tight text-gray-950 dark:text-white">闲鱼购买额度</p>
+                    <p class="mt-2 text-base font-semibold text-orange-700 dark:text-orange-300">支持多档额度</p>
+                    <p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">支持 1刀 / 5刀 / 10刀 等额度购买或续费。</p>
+                  </div>
+                  <a
+                    class="inline-flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-base font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:from-orange-600 hover:to-rose-600"
+                    href="https://m.tb.cn/h.RFGn1sT?tk=UCk1gkZ6Cl5"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    前往闲鱼购买
+                  </a>
+                </div>
+              </div>
+            </div>
             <div v-if="enabledMethods.length === 0" class="card py-16 text-center">
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
@@ -287,6 +342,7 @@ import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
+import { startLinuxDoShopHandoff } from '@/api/auth'
 
 const i18n = useI18n()
 const { t } = i18n
@@ -749,6 +805,28 @@ function closeRenewalModal() {
   renewGroupId.value = null
 }
 
+async function handleLinuxDoShopPurchase() {
+  const fallbackURL = 'https://lklb.top/buy'
+  const popup = window.open('', '_blank')
+  if (popup) {
+    try { popup.opener = null } catch { /* ignore */ }
+  }
+  const navigate = (target: string) => {
+    if (popup && !popup.closed) {
+      popup.location.href = target
+      return
+    }
+    window.location.href = target
+  }
+
+  try {
+    const handoff = await startLinuxDoShopHandoff()
+    navigate(handoff.url || fallbackURL)
+  } catch {
+    navigate(fallbackURL)
+  }
+}
+
 async function handleSubmitRecharge() {
   if (!canSubmit.value || submitting.value) return
   await createOrder(validAmount.value, 'balance')
@@ -1145,7 +1223,14 @@ onMounted(async () => {
         }
       }
     }
-  } catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
+  } catch (err: unknown) {
+    // Keep this page usable even when the built-in payment system is disabled;
+    // the Xianyu quota purchase entry is static and does not depend on checkout APIs.
+    checkout.value = {
+      methods: {}, global_min: 0, global_max: 0,
+      plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+    }
+  }
   finally { loading.value = false }
   // Fetch active subscriptions (uses cache, non-blocking)
   subscriptionStore.fetchActiveSubscriptions().catch(() => {})

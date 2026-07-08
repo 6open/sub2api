@@ -3,6 +3,8 @@ package service
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -53,4 +55,47 @@ func GenerateRedeemCode() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func GeneratePrefixedRedeemCode(prefix string) (string, error) {
+	prefix = strings.ToUpper(strings.Trim(strings.TrimSpace(prefix), "-"))
+	if prefix == "" {
+		return GenerateRedeemCode()
+	}
+
+	availableRandomChars := 32 - len(prefix) - 1
+	if availableRandomChars <= 0 {
+		return "", fmt.Errorf("redeem code prefix too long")
+	}
+
+	byteCount := (availableRandomChars + 1) / 2
+	b := make([]byte, byteCount)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	randomPart := strings.ToUpper(hex.EncodeToString(b))
+	if len(randomPart) > availableRandomChars {
+		randomPart = randomPart[:availableRandomChars]
+	}
+	return prefix + "-" + randomPart, nil
+}
+
+func redeemCodePrefixForGenerate(codeType, notes string) string {
+	if codeType == RedeemTypeBalance {
+		if _, ok := parseLDCCodeMetadata(notes); ok {
+			return "LDC"
+		}
+		return "GEN"
+	}
+
+	switch codeType {
+	case RedeemTypeConcurrency:
+		return "CON"
+	case RedeemTypeSubscription:
+		return "SUB"
+	case RedeemTypeInvitation:
+		return "INV"
+	default:
+		return "GEN"
+	}
 }

@@ -437,6 +437,7 @@ type GenerateRedeemCodesInput struct {
 	Value        float64
 	GroupID      *int64 // 订阅类型专用：关联的分组ID
 	ValidityDays int    // 订阅类型专用：有效天数
+	Notes        string
 	ExpiresAt    *time.Time
 }
 
