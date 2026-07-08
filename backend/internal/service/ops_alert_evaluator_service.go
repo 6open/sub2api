@@ -22,6 +22,11 @@ const (
 	opsAlertEvaluatorLeaderLockKey   = "ops:alert:evaluator:leader"
 	opsAlertEvaluatorLeaderLockTTL   = 90 * time.Second
 	opsAlertEvaluatorSkipLogInterval = 1 * time.Minute
+
+	// Rate-style alerts are unstable when traffic is very low: a single failed
+	// request makes error_rate=100% and success_rate=0%. Require a small sample
+	// before evaluating those percentage metrics to avoid low-traffic noise.
+	opsAlertRateMetricMinSLARequests = int64(5)
 )
 
 var opsAlertEvaluatorReleaseScript = redis.NewScript(`
@@ -599,17 +604,17 @@ func (s *OpsAlertEvaluatorService) computeRuleMetric(
 
 	switch strings.TrimSpace(rule.MetricType) {
 	case "success_rate":
-		if overview.RequestCountSLA <= 0 {
+		if overview.RequestCountSLA < opsAlertRateMetricMinSLARequests {
 			return 0, false
 		}
 		return overview.SLA * 100, true
 	case "error_rate":
-		if overview.RequestCountSLA <= 0 {
+		if overview.RequestCountSLA < opsAlertRateMetricMinSLARequests {
 			return 0, false
 		}
 		return overview.ErrorRate * 100, true
 	case "upstream_error_rate":
-		if overview.RequestCountSLA <= 0 {
+		if overview.RequestCountSLA < opsAlertRateMetricMinSLARequests {
 			return 0, false
 		}
 		return overview.UpstreamErrorRate * 100, true

@@ -148,6 +148,58 @@ func TestComputeRuleMetric_AccountTempUnscheduledCount(t *testing.T) {
 	require.InDelta(t, 2.0, val, 0.0001, "only 2 accounts have an active temp-unsched window")
 }
 
+func TestComputeRuleMetricRateMetricsRequireMinimumSLASamples(t *testing.T) {
+	t.Parallel()
+
+	start := time.Now().UTC().Add(-5 * time.Minute)
+	end := time.Now().UTC()
+	ctx := context.Background()
+
+	for _, metricType := range []string{"success_rate", "error_rate", "upstream_error_rate"} {
+		metricType := metricType
+		t.Run(metricType+" skips low sample windows", func(t *testing.T) {
+			t.Parallel()
+
+			svc := &OpsAlertEvaluatorService{
+				opsRepo: &stubOpsRepo{overview: &OpsDashboardOverview{
+					RequestCountSLA:   4,
+					SLA:               0,
+					ErrorRate:         1,
+					UpstreamErrorRate: 1,
+				}},
+			}
+			val, ok := svc.computeRuleMetric(ctx, &OpsAlertRule{MetricType: metricType}, nil, start, end, "", nil)
+
+			require.False(t, ok)
+			require.Equal(t, 0.0, val)
+		})
+
+		t.Run(metricType+" evaluates once minimum sample count is reached", func(t *testing.T) {
+			t.Parallel()
+
+			svc := &OpsAlertEvaluatorService{
+				opsRepo: &stubOpsRepo{overview: &OpsDashboardOverview{
+					RequestCountSLA:   5,
+					SLA:               0.80,
+					ErrorRate:         0.20,
+					UpstreamErrorRate: 0.10,
+				}},
+			}
+			val, ok := svc.computeRuleMetric(ctx, &OpsAlertRule{MetricType: metricType}, nil, start, end, "", nil)
+
+			require.True(t, ok)
+			switch metricType {
+			case "success_rate":
+				require.InDelta(t, 80.0, val, 0.0001)
+			case "error_rate":
+				require.InDelta(t, 20.0, val, 0.0001)
+			case "upstream_error_rate":
+				require.InDelta(t, 10.0, val, 0.0001)
+			}
+		})
+	}
+}
+
 func TestComputeRuleMetricNewIndicators(t *testing.T) {
 	t.Parallel()
 
