@@ -22,7 +22,7 @@ PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://lklb.top}"
 APP_CONTAINER="${APP_CONTAINER:-sub2api}"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-sub2api-postgres}"
 BUILD_IMAGE="${BUILD_IMAGE:-golang:1.26.4}"
-GOPROXY="${GOPROXY:-https://goproxy.io,https://goproxy.cn,direct}"
+GOPROXY="${GOPROXY:-https://goproxy.cn,https://goproxy.io,direct}"
 GOSUMDB="${GOSUMDB:-sum.golang.google.cn}"
 GO_BUILD_CACHE="${GO_BUILD_CACHE:-/tmp/sub2api-go-build-cache}"
 GO_MOD_CACHE="${GO_MOD_CACHE:-/tmp/sub2api-go-mod-cache}"
@@ -141,6 +141,22 @@ build_frontend() {
   eval "$FRONTEND_BUILD_CMD"
 }
 
+ensure_go_cache_dirs() {
+  mkdir -p "$GO_BUILD_CACHE" "$GO_MOD_CACHE"
+}
+
+docker_go() {
+  ensure_go_cache_dirs
+  docker run --rm --network host \
+    -e GOPROXY="$GOPROXY" \
+    -e GOSUMDB="$GOSUMDB" \
+    -e GOCACHE=/go-build-cache \
+    -e GOMODCACHE=/go-mod-cache \
+    -v "$GO_BUILD_CACHE":/go-build-cache \
+    -v "$GO_MOD_CACHE":/go-mod-cache \
+    "$@"
+}
+
 run_backend_checks() {
   if [[ "$RUN_BACKEND_CHECKS" != "1" ]]; then
     return
@@ -153,15 +169,8 @@ run_backend_checks() {
   fi
 
   log "运行后端快速检查"
-  mkdir -p "$GO_BUILD_CACHE" "$GO_MOD_CACHE"
-  docker run --rm --network host \
-    -e GOPROXY="$GOPROXY" \
-    -e GOSUMDB="$GOSUMDB" \
-    -e GOCACHE=/go-build-cache \
-    -e GOMODCACHE=/go-mod-cache \
+  docker_go \
     -v "$PWD/backend":/src \
-    -v "$GO_BUILD_CACHE":/go-build-cache \
-    -v "$GO_MOD_CACHE":/go-mod-cache \
     -w /src \
     "$BUILD_IMAGE" \
     sh -lc '/usr/local/go/bin/go test -tags unit ./internal/service -run "TestComputeRuleMetric|TestComputeGroupAvailableRatio|TestCountAccountsByCondition" -count=1'
@@ -169,22 +178,15 @@ run_backend_checks() {
 
 build_main_binary() {
   log "构建 sub2api embed 二进制"
-  mkdir -p "$GO_BUILD_CACHE" "$GO_MOD_CACHE"
 
   local out_host version_value date_value
   out_host="/tmp/sub2api-lklb-$(date +%Y%m%d%H%M%S)"
   version_value="$(tr -d '\r\n' < backend/cmd/server/VERSION)"
   date_value="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-  docker run --rm --network host \
-    -e GOPROXY="$GOPROXY" \
-    -e GOSUMDB="$GOSUMDB" \
-    -e GOCACHE=/go-build-cache \
-    -e GOMODCACHE=/go-mod-cache \
+  docker_go \
     -v "$PWD":/src \
     -v /tmp:/host-tmp \
-    -v "$GO_BUILD_CACHE":/go-build-cache \
-    -v "$GO_MOD_CACHE":/go-mod-cache \
     -w /src/backend \
     "$BUILD_IMAGE" \
     sh -lc '/usr/local/go/bin/go version >/dev/null && CGO_ENABLED=0 GOOS=linux /usr/local/go/bin/go build -buildvcs=false -tags embed -ldflags="-s -w -X main.Version='"$version_value"' -X main.Commit=local-lklb-deploy -X main.Date='"$date_value"' -X main.BuildType=release" -trimpath -o /host-tmp/'"$(basename "$out_host")"' ./cmd/server'
