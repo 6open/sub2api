@@ -13,6 +13,7 @@ set -euo pipefail
 #
 # 常用：
 #   ./deploy/lklb-deploy-ali98.sh
+#   ./deploy/lklb-deploy-ali98.sh --backend-fast
 #   ./deploy/lklb-deploy-ali98.sh --code-shop-only
 #   ./deploy/lklb-deploy-ali98.sh --skip-tests
 
@@ -27,6 +28,7 @@ GO_BUILD_CACHE="${GO_BUILD_CACHE:-/tmp/sub2api-go-build-cache}"
 GO_MOD_CACHE="${GO_MOD_CACHE:-/tmp/sub2api-go-mod-cache}"
 FRONTEND_TEST_CMD="${FRONTEND_TEST_CMD:-corepack pnpm --dir frontend test -- --run src/views/user/__tests__/PaymentView.xianyu.static.spec.ts}"
 FRONTEND_BUILD_CMD="${FRONTEND_BUILD_CMD:-corepack pnpm --dir frontend build}"
+GO_BACKEND_TEST_CMD="${GO_BACKEND_TEST_CMD:-}"
 REMOTE_HEALTH_URL="${REMOTE_HEALTH_URL:-http://127.0.0.1:18080/health}"
 REMOTE_CODE_SHOP_DIR="${REMOTE_CODE_SHOP_DIR:-/opt/lklb-code-shop}"
 REMOTE_CODE_SHOP_LOG="${REMOTE_CODE_SHOP_LOG:-/opt/lklb-code-shop/data/app.log}"
@@ -36,6 +38,7 @@ RUN_CODE_SHOP=0
 SKIP_TESTS=0
 SKIP_FRONTEND_BUILD=0
 SKIP_MAIN_VERIFY=0
+RUN_BACKEND_CHECKS=0
 
 usage() {
   cat <<EOF
@@ -43,6 +46,7 @@ Usage: $0 [options]
 
 Options:
   --main-only             只部署 sub2api 主站（默认）
+  --backend-fast          后端快速部署：跳过前端测试/build和页面校验，只跑后端检查、构建、健康检查
   --code-shop-only        只重启并验证 /buy 发码服务
   --restart-code-shop     主站部署后顺便重启 /buy 发码服务
   --skip-tests            跳过前端关键测试
@@ -57,6 +61,7 @@ Environment:
   BUILD_IMAGE=$BUILD_IMAGE
   GOPROXY=$GOPROXY
   FRONTEND_TEST_CMD=$FRONTEND_TEST_CMD
+  GO_BACKEND_TEST_CMD=${GO_BACKEND_TEST_CMD:-<default backend smoke tests>}
 EOF
 }
 
@@ -65,6 +70,14 @@ while [[ $# -gt 0 ]]; do
     --main-only)
       RUN_MAIN=1
       RUN_CODE_SHOP=0
+      ;;
+    --backend-fast)
+      RUN_MAIN=1
+      RUN_CODE_SHOP=0
+      SKIP_TESTS=1
+      SKIP_FRONTEND_BUILD=1
+      SKIP_MAIN_VERIFY=1
+      RUN_BACKEND_CHECKS=1
       ;;
     --code-shop-only)
       RUN_MAIN=0
@@ -126,6 +139,32 @@ build_frontend() {
   fi
   log "构建前端 dist"
   eval "$FRONTEND_BUILD_CMD"
+}
+
+run_backend_checks() {
+  if [[ "$RUN_BACKEND_CHECKS" != "1" ]]; then
+    return
+  fi
+
+  if [[ -n "$GO_BACKEND_TEST_CMD" ]]; then
+    log "运行自定义后端检查"
+    eval "$GO_BACKEND_TEST_CMD"
+    return
+  fi
+
+  log "运行后端快速检查"
+  mkdir -p "$GO_BUILD_CACHE" "$GO_MOD_CACHE"
+  docker run --rm --network host \
+    -e GOPROXY="$GOPROXY" \
+    -e GOSUMDB="$GOSUMDB" \
+    -e GOCACHE=/go-build-cache \
+    -e GOMODCACHE=/go-mod-cache \
+    -v "$PWD/backend":/src \
+    -v "$GO_BUILD_CACHE":/go-build-cache \
+    -v "$GO_MOD_CACHE":/go-mod-cache \
+    -w /src \
+    "$BUILD_IMAGE" \
+    sh -lc '/usr/local/go/bin/go test -tags unit ./internal/service -run "TestComputeRuleMetric|TestComputeGroupAvailableRatio|TestCountAccountsByCondition" -count=1'
 }
 
 build_main_binary() {
@@ -297,6 +336,7 @@ deploy_main() {
   cd "$(repo_root)"
   run_frontend_checks
   build_frontend
+  run_backend_checks
 
   local bin_path
   bin_path="$(build_main_binary | tail -1)"
