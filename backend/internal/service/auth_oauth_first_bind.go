@@ -39,6 +39,51 @@ func (s *AuthService) ApplyProviderDefaultSettingsOnFirstBind(
 	return tx.Commit()
 }
 
+// RecordProviderDefaultSettingsOnSignup records that the user already received
+// provider-specific signup defaults. Signup defaults are applied while creating
+// the user; this marker prevents a later first email bind from granting the same
+// welcome credit again.
+func (s *AuthService) RecordProviderDefaultSettingsOnSignup(
+	ctx context.Context,
+	userID int64,
+	providerType string,
+) error {
+	if s == nil || s.entClient == nil || s.settingService == nil || userID <= 0 {
+		return nil
+	}
+
+	providerType = strings.TrimSpace(providerType)
+	if providerType == "" {
+		providerType = "email"
+	}
+
+	_, enabled, err := s.settingService.ResolveAuthSourceGrantSettings(ctx, providerType, false)
+	if err != nil {
+		return fmt.Errorf("load auth source signup defaults: %w", err)
+	}
+	if !enabled {
+		return nil
+	}
+
+	client := s.entClient
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		client = tx.Client()
+	}
+
+	var result entsql.Result
+	if err := client.Driver().Exec(
+		ctx,
+		`INSERT INTO user_provider_default_grants (user_id, provider_type, grant_reason)
+	VALUES ($1, $2, $3)
+ON CONFLICT (user_id, provider_type, grant_reason) DO NOTHING`,
+		[]any{userID, providerType, "signup"},
+		&result,
+	); err != nil {
+		return fmt.Errorf("record signup provider grant: %w", err)
+	}
+	return nil
+}
+
 func (s *AuthService) applyProviderDefaultSettingsOnFirstBind(
 	ctx context.Context,
 	userID int64,
@@ -55,6 +100,14 @@ func (s *AuthService) applyProviderDefaultSettingsOnFirstBind(
 	client := s.entClient
 	if tx := dbent.TxFromContext(ctx); tx != nil {
 		client = tx.Client()
+	}
+
+	hasSignupGrant, err := hasAnyProviderSignupGrant(ctx, client, userID)
+	if err != nil {
+		return fmt.Errorf("inspect signup provider grant: %w", err)
+	}
+	if hasSignupGrant {
+		return nil
 	}
 
 	var result entsql.Result
@@ -101,4 +154,22 @@ ON CONFLICT (user_id, provider_type, grant_reason) DO NOTHING`,
 	}
 
 	return nil
+}
+
+func hasAnyProviderSignupGrant(ctx context.Context, client *dbent.Client, userID int64) (bool, error) {
+	if client == nil || userID <= 0 {
+		return false, nil
+	}
+
+	rows, err := client.QueryContext(
+		ctx,
+		`SELECT 1 FROM user_provider_default_grants WHERE user_id = $1 AND grant_reason = $2 LIMIT 1`,
+		userID,
+		"signup",
+	)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return rows.Next(), rows.Err()
 }

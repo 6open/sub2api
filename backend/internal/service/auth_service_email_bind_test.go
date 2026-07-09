@@ -172,6 +172,80 @@ func TestAuthServiceBindEmailIdentity_UpdatesEmailAndAppliesFirstBindDefaults(t 
 	require.Equal(t, 1, countProviderGrantRecords(t, client, user.ID, "email", "first_bind"))
 }
 
+func TestAuthServiceBindEmailIdentity_SkipsFirstBindDefaultsAfterSignupGrant(t *testing.T) {
+	assigner := &emailBindDefaultSubAssignerStub{}
+	cache := &emailBindCacheStub{
+		data: &service.VerificationCodeData{
+			Code:      "123456",
+			CreatedAt: time.Now().UTC(),
+			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
+		},
+	}
+	svc, _, client := newAuthServiceForEmailBind(t, map[string]string{
+		service.SettingKeyAuthSourceDefaultEmailBalance:          "8.5",
+		service.SettingKeyAuthSourceDefaultEmailConcurrency:      "4",
+		service.SettingKeyAuthSourceDefaultEmailSubscriptions:    `[{"group_id":11,"validity_days":30}]`,
+		service.SettingKeyAuthSourceDefaultEmailGrantOnFirstBind: "true",
+	}, cache, assigner)
+
+	ctx := context.Background()
+	user, err := client.User.Create().
+		SetEmail("linuxdo-signup" + service.LinuxDoConnectSyntheticEmailDomain).
+		SetUsername("linuxdo-signup").
+		SetPasswordHash("old-hash").
+		SetBalance(2).
+		SetConcurrency(5).
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.ExecContext(
+		ctx,
+		`INSERT INTO user_provider_default_grants (user_id, provider_type, grant_reason) VALUES (?, ?, ?)`,
+		user.ID,
+		"linuxdo",
+		"signup",
+	)
+	require.NoError(t, err)
+
+	updatedUser, err := svc.BindEmailIdentity(ctx, user.ID, "real-email@example.com", "123456", "new-password")
+	require.NoError(t, err)
+	require.NotNil(t, updatedUser)
+	require.Equal(t, "real-email@example.com", updatedUser.Email)
+
+	storedUser, err := client.User.Get(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2.0, storedUser.Balance)
+	require.Equal(t, 5, storedUser.Concurrency)
+	require.Empty(t, assigner.calls)
+	require.Equal(t, 1, countProviderGrantRecords(t, client, user.ID, "linuxdo", "signup"))
+	require.Equal(t, 0, countProviderGrantRecords(t, client, user.ID, "email", "first_bind"))
+}
+
+func TestAuthServiceRecordProviderDefaultSettingsOnSignup_WritesLinuxDoSignupGrant(t *testing.T) {
+	svc, _, client := newAuthServiceForEmailBind(t, map[string]string{
+		service.SettingKeyAuthSourceDefaultLinuxDoBalance:       "2",
+		service.SettingKeyAuthSourceDefaultLinuxDoGrantOnSignup: "true",
+	}, nil, nil)
+
+	ctx := context.Background()
+	user, err := client.User.Create().
+		SetEmail("linuxdo-record" + service.LinuxDoConnectSyntheticEmailDomain).
+		SetUsername("linuxdo-record").
+		SetPasswordHash("hash").
+		SetBalance(2).
+		SetConcurrency(5).
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.RecordProviderDefaultSettingsOnSignup(ctx, user.ID, "linuxdo"))
+	require.NoError(t, svc.RecordProviderDefaultSettingsOnSignup(ctx, user.ID, "linuxdo"))
+
+	require.Equal(t, 1, countProviderGrantRecords(t, client, user.ID, "linuxdo", "signup"))
+}
+
 func TestAuthServiceBindEmailIdentity_RejectsExistingEmailOnAnotherUser(t *testing.T) {
 	cache := &emailBindCacheStub{
 		data: &service.VerificationCodeData{

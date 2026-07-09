@@ -282,6 +282,9 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 
 	s.updateOAuthSignupSource(ctx, user.ID, signupSource)
 	grantPlan := s.resolveSignupGrantPlan(ctx, signupSource)
+	if err := s.RecordProviderDefaultSettingsOnSignup(ctx, user.ID, signupSource); err != nil {
+		slog.Error("oauth email finalize: record signup defaults grant failed", "user_id", user.ID, "signup_source", signupSource, "error", err.Error())
+	}
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 	// snapshot user × platform quota（fail-open）
 	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)

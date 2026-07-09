@@ -229,6 +229,9 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		return "", nil, ErrServiceUnavailable
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
+	if err := s.RecordProviderDefaultSettingsOnSignup(ctx, user.ID, "email"); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to record email signup defaults grant: user_id=%d err=%v", user.ID, err)
+	}
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 	// snapshot user × platform quota（fail-open）
 	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
@@ -540,6 +543,9 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 			} else {
 				user = newUser
 				s.postAuthUserBootstrap(ctx, user, signupSource, false)
+				if err := s.RecordProviderDefaultSettingsOnSignup(ctx, user.ID, signupSource); err != nil {
+					logger.LegacyPrintf("service.auth", "[Auth] Failed to record oauth signup defaults grant: user_id=%d source=%s err=%v", user.ID, signupSource, err)
+				}
 				s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 				// snapshot user × platform quota（fail-open）
 				_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
@@ -705,6 +711,9 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					user = newUser
 					created = true
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
+					if err := s.RecordProviderDefaultSettingsOnSignup(ctx, user.ID, signupSource); err != nil {
+						logger.LegacyPrintf("service.auth", "[Auth] Failed to record oauth signup defaults grant: user_id=%d source=%s err=%v", user.ID, signupSource, err)
+					}
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
 					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
@@ -726,6 +735,9 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					user = newUser
 					created = true
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
+					if err := s.RecordProviderDefaultSettingsOnSignup(ctx, user.ID, signupSource); err != nil {
+						logger.LegacyPrintf("service.auth", "[Auth] Failed to record oauth signup defaults grant: user_id=%d source=%s err=%v", user.ID, signupSource, err)
+					}
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
 					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
