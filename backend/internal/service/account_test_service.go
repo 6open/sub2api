@@ -514,6 +514,13 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// Align test routing with gateway behavior: OpenAI accounts apply normal
 	// account model mapping, and compact mode applies compact-only mapping on top.
 	testModelID = account.GetMappedModel(testModelID)
+	// ChatGPT OAuth/Codex rejects bare family names (e.g. "gpt-5.6"); normalize
+	// to a concrete model before building the probe payload.
+	if account.IsOAuth() {
+		if normalized := normalizeCodexModel(testModelID); normalized != "" {
+			testModelID = normalized
+		}
+	}
 	if mode == AccountTestModeCompact {
 		testModelID = resolveOpenAICompactForwardModel(account, testModelID)
 		return s.testOpenAICompactConnection(c, account, testModelID)

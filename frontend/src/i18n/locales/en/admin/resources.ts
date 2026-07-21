@@ -296,7 +296,7 @@ export default {
       amount: 'Amount ($)',
       ldc: 'LDC Redeem Code',
       ldcAmount: 'LDC Amount',
-      ldcHint: 'LDC codes use LinuxDO tiered rates: first $10 at 10:1, then 50:1.',
+      ldcHint: 'LDC codes use LinuxDO tiered rates: first $10 at 10:1, then 20:1.',
       value: 'Value',
       count: 'Count',
       generating: 'Generating...',
@@ -373,6 +373,33 @@ export default {
       codeEnabledSuccess: 'Redeem code enabled',
       codeDeletedSuccess: 'Redeem code deleted successfully',
       failedToUpdate: 'Failed to update redeem code'
+    },
+
+    // LDC Shop Orders
+    ldcShop: {
+      title: 'LDC Shop Orders',
+      description: 'View LinuxDO credit shop purchases and auto-credit records',
+      searchPlaceholder: 'Search order no / username / code / email...',
+      allStatus: 'All Status',
+      failedToLoad: 'Failed to load LDC shop orders',
+      columns: {
+        orderNo: 'Order No',
+        linuxdoUser: 'LinuxDO User',
+        amount: 'Amount',
+        status: 'Status',
+        sub2apiUser: 'Sub2API User',
+        code: 'Code',
+        delivery: 'Delivery',
+        createdAt: 'Created At'
+      },
+      status: {
+        credited: 'Auto credited',
+        issued: 'Code issued',
+        expired: 'Expired',
+        created: 'Created',
+        create_failed: 'Create failed',
+        pending_no_stock: 'Pending / no stock'
+      }
     },
 
     // Announcements

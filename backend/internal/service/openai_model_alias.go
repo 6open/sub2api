@@ -71,6 +71,7 @@ func normalizeKnownOpenAICodexModel(model string) string {
 		return "gpt-5.6-terra"
 	case strings.Contains(normalized, "gpt-5.6-luna"):
 		return "gpt-5.6-luna"
+	// Bare family name is not valid for ChatGPT OAuth/Codex; prefer Sol.
 	case normalized == "gpt-5.6":
 		return "gpt-5.6-sol"
 	case strings.HasPrefix(normalized, "gpt-5.6-"):

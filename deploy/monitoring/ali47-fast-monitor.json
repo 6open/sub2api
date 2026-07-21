@@ -1,0 +1,42 @@
+{
+  "feishu_config_path": "/etc/sub2api-feishu-monitor/config.json",
+  "state_path": "/var/lib/sub2api-feishu-fast-monitor/state.json",
+  "service_label": "ali47 / migo-ai",
+  "service_symbol": "[FAST]",
+  "reminder_schedule_seconds": [120, 300, 600, 1200, 1800],
+  "recovery_success_checks": 2,
+  "checks": [
+    {
+      "key": "ali47_local_health",
+      "label": "ali47 本机 sub2api",
+      "url": "http://127.0.0.1:18080/health",
+      "expected_statuses": [200],
+      "timeout_seconds": 3,
+      "fail_threshold": 2
+    },
+    {
+      "key": "ali98_public_health",
+      "label": "ali98 公网服务",
+      "url": "https://lklb.top/health",
+      "expected_statuses": [200],
+      "timeout_seconds": 5,
+      "fail_threshold": 2
+    },
+    {
+      "key": "ali47_proxy_7890",
+      "label": "ali47 Grok 代理 7890",
+      "url": "https://cli-chat-proxy.grok.com/v1/models",
+      "proxy": "http://127.0.0.1:7890",
+      "timeout_seconds": 5,
+      "fail_threshold": 2
+    }
+  ],
+  "database_error_burst": {
+    "enabled": true,
+    "runtime": "docker",
+    "container": "sub2api-postgres",
+    "window_seconds": 60,
+    "min_severe_errors": 5,
+    "query_fail_threshold": 2
+  }
+}

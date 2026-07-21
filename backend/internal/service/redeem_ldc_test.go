@@ -26,9 +26,9 @@ func TestCalculateLDCCodeCreditUSDUsesTieredUserQuota(t *testing.T) {
 		wantCreditUSD float64
 	}{
 		{name: "all promo", ldcAmount: 100, issuedUSD: 0, wantCreditUSD: 10},
-		{name: "partial promo then normal", ldcAmount: 100, issuedUSD: 6, wantCreditUSD: 5.2},
-		{name: "promo exhausted", ldcAmount: 100, issuedUSD: 10, wantCreditUSD: 2},
-		{name: "more than promo from zero", ldcAmount: 150, issuedUSD: 0, wantCreditUSD: 11},
+		{name: "partial promo then normal", ldcAmount: 100, issuedUSD: 6, wantCreditUSD: 7},
+		{name: "promo exhausted", ldcAmount: 100, issuedUSD: 10, wantCreditUSD: 5},
+		{name: "more than promo from zero", ldcAmount: 150, issuedUSD: 0, wantCreditUSD: 12.5},
 	}
 
 	for _, tt := range tests {
@@ -101,8 +101,8 @@ func TestRedeemLDCCodeCreditsTieredUSDByUserHistoryWithLinuxDoBinding(t *testing
 
 	got, err := svc.Redeem(ctx, user.ID, code.Code)
 	require.NoError(t, err)
-	require.InDelta(t, 5.2, userRepo.lastBalanceAmount, 0.000001)
-	require.InDelta(t, 5.2, got.Value, 0.000001)
+	require.InDelta(t, 7, userRepo.lastBalanceAmount, 0.000001)
+	require.InDelta(t, 7, got.Value, 0.000001)
 
 	reloaded, err := client.RedeemCode.Get(ctx, code.ID)
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func TestRedeemLDCCodeCreditsTieredUSDByUserHistoryWithLinuxDoBinding(t *testing
 	require.Contains(t, *reloaded.Notes, `"code_kind":"ldc"`)
 	require.Contains(t, *reloaded.Notes, `"redeemed_user_id":`)
 	require.Contains(t, *reloaded.Notes, `"ldc_amount":100`)
-	require.Contains(t, *reloaded.Notes, `"credited_usd":5.2`)
+	require.Contains(t, *reloaded.Notes, `"credited_usd":7`)
 }
 
 func TestRedeemLDCCodeRequiresLinuxDoBinding(t *testing.T) {
@@ -385,6 +385,9 @@ func (r *ldcUserRepoStub) BatchSetConcurrency(context.Context, []int64, int) (in
 	panic("unexpected call")
 }
 func (r *ldcUserRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected call")
+}
+func (r *ldcUserRepoStub) BatchUpdateLimits(context.Context, []int64, *int, *int) (int, error) {
 	panic("unexpected call")
 }
 func (r *ldcUserRepoStub) ExistsByEmail(context.Context, string) (bool, error) {

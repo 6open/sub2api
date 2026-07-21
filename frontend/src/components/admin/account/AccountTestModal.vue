@@ -321,6 +321,39 @@ const sortTestModels = (models: ClaudeModel[]) => {
   })
 }
 
+// Prefer concrete, currently usable models over bare family names like "gpt-5.6".
+const prioritizedOpenAITestModels = [
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'gpt-5.3-codex',
+  'gpt-5.2'
+]
+
+const pickDefaultTestModelId = (platform: string | undefined, models: ClaudeModel[]) => {
+  if (!models.length) return ''
+  if (platform === 'gemini') return models[0].id
+
+  if (platform === 'openai') {
+    for (const preferred of prioritizedOpenAITestModels) {
+      const hit = models.find((m) => m.id === preferred)
+      if (hit) return hit.id
+    }
+    // Skip bare family ids that ChatGPT OAuth rejects (e.g. gpt-5.6 without variant).
+    const concrete = models.find((m) => {
+      const id = (m.id || '').toLowerCase()
+      return id !== 'gpt-5.6' && id !== 'gpt-5' && !/^gpt-5\.\d+$/.test(id)
+    })
+    if (concrete) return concrete.id
+  }
+
+  const sonnetModel = models.find((m) => m.id.includes('sonnet'))
+  return sonnetModel?.id || models[0].id
+}
+
 // Load available models when modal opens
 watch(
   () => props.show,
@@ -354,13 +387,7 @@ const loadAvailableModels = async () => {
       : models
     // Default selection by platform
     if (availableModels.value.length > 0) {
-      if (props.account.platform === 'gemini') {
-        selectedModelId.value = availableModels.value[0].id
-      } else {
-        // Try to select Sonnet as default, otherwise use first model
-        const sonnetModel = availableModels.value.find((m) => m.id.includes('sonnet'))
-        selectedModelId.value = sonnetModel?.id || availableModels.value[0].id
-      }
+      selectedModelId.value = pickDefaultTestModelId(props.account.platform, availableModels.value)
     }
   } catch (error) {
     console.error('Failed to load available models:', error)

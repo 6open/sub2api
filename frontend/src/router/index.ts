@@ -551,6 +551,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/ldc-shop-orders',
+    name: 'AdminLDCShopOrders',
+    component: () => import('@/views/admin/LDCShopOrdersView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'LDC Shop Orders',
+      titleKey: 'admin.ldcShop.title',
+      descriptionKey: 'admin.ldcShop.description'
+    }
+  },
+  {
     path: '/admin/promo-codes',
     name: 'AdminPromoCodes',
     component: () => import('@/views/admin/PromoCodesView.vue'),
@@ -888,6 +900,7 @@ router.beforeEach(async (to, _from, next) => {
       '/admin/groups',
       '/admin/subscriptions',
       '/admin/redeem',
+      '/admin/ldc-shop-orders',
       '/subscriptions',
       '/redeem'
     ]

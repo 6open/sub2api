@@ -61,7 +61,7 @@
                     <div class="mb-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200">LinuxDO 积分购买</div>
                     <p class="text-2xl font-extrabold tracking-tight text-gray-950 dark:text-white">前 10刀额度享特惠</p>
                     <p class="mt-2 text-base font-semibold text-emerald-700 dark:text-emerald-300">10 LDC = 1刀</p>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">支持自定义额度，超出后按 50 LDC = 1刀，点击购买时再认证 LinuxDO 账号。</p>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">超出后按 20 LDC = 1刀</p>
                   </div>
                   <button
                     type="button"
@@ -83,7 +83,7 @@
                   </div>
                   <a
                     class="inline-flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-base font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:from-orange-600 hover:to-rose-600"
-                    href="https://m.tb.cn/h.RFGn1sT?tk=UCk1gkZ6Cl5"
+                    href="https://m.tb.cn/h.8bWmQVo?tk=VCKygIjCm4N"
                     target="_blank"
                     rel="noopener noreferrer"
                   >

@@ -170,6 +170,7 @@ export default {
     accounts: 'Accounts',
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',
+    ldcShopOrders: 'LDC Shop Orders',
     ops: 'Ops',
     promoCodes: 'Promo Codes',
     settings: 'Settings',

@@ -49,7 +49,7 @@ PLANS={
 
 PROMO_USD_LIMIT=10
 PROMO_LDC_PER_USD=10
-NORMAL_LDC_PER_USD=50
+NORMAL_LDC_PER_USD=20
 
 def remaining_promo_usd(issued_usd_value):
     try:
@@ -709,6 +709,7 @@ class H(BaseHTTPRequestHandler):
             if path=='/buy/result': return self.send_result(self.redeem(params))
             if path=='/admin/import-codes' and self.command=='POST': return self.send_result(self.import_codes(params))
             if path=='/admin/stats': return self.send_result(self.stats(params))
+            if path=='/admin/orders': return self.send_result(self.admin_orders(params))
             return self.send_result(text_bytes('not found',404))
         except Exception:
             traceback.print_exc(); return self.send_result(text_bytes('internal error',500))
@@ -762,7 +763,7 @@ class H(BaseHTTPRequestHandler):
             login_html="<div class='login-note'>已登录：{}</div> <a class='btn2' href='/api/linuxdo-connect/logout'>退出</a>".format(html.escape(user.get('username','')))
         else:
             login_html="<div class='login-note'>点击购买时使用 LinuxDO 登录</div>"
-        body=["<div class='hero'><div><h1>LKLB LDC 充值</h1><p class='subtitle'>阶梯计价：每个账号前 100 LDC 可兑换 10刀额度；超出部分按 50 LDC 兑换 1刀额度。</p>{}</div></div>".format(login_html)]
+        body=["<div class='hero'><div><h1>LKLB LDC 充值</h1><p class='subtitle'>阶梯计价：每个账号前 100 LDC 可兑换 10刀额度；超出部分按 20 LDC 兑换 1刀额度。</p>{}</div></div>".format(login_html)]
         body.append("<div class='plans'>")
         fixed_ldc = [('10','10 LDC'), ('50','50 LDC'), ('100','100 LDC')]
         for amount,label in fixed_ldc:
@@ -883,6 +884,37 @@ class H(BaseHTTPRequestHandler):
             ps=[dict(r) for r in c.execute('SELECT plan,status,COUNT(*) n FROM purchase_orders GROUP BY plan,status ORDER BY plan,status')]
             recent=[dict(r) for r in c.execute('SELECT out_trade_no,plan,username,status,code,created_at FROM purchase_orders ORDER BY id DESC LIMIT 10')]
         return json_bytes({'ok':True,'codes':cs,'legacy_orders':os_,'purchase_orders':ps,'recent_orders':recent})
+
+
+    def admin_orders(self,params):
+        if not self.is_admin(params): return json_bytes({'ok':False,'error':'unauthorized'},401)
+        try: page=max(1,int(first(params,['page']) or 1))
+        except Exception: page=1
+        try: page_size=int(first(params,['page_size']) or 20)
+        except Exception: page_size=20
+        page_size=max(1,min(page_size,100))
+        status=(first(params,['status']) or '').strip()
+        search=(first(params,['search']) or first(params,['q']) or '').strip()
+        where=[]; args=[]
+        if status:
+            where.append('status=?'); args.append(status)
+        if search:
+            like='%'+search+'%'
+            where.append('(out_trade_no LIKE ? OR username LIKE ? OR IFNULL(code,"") LIKE ? OR IFNULL(sub2api_user_email,"") LIKE ? OR IFNULL(user_sub,"") LIKE ? OR IFNULL(credit_trade_no,"") LIKE ?)')
+            args.extend([like,like,like,like,like,like])
+        where_sql=(' WHERE '+ ' AND '.join(where)) if where else ''
+        with conn() as c:
+            total=c.execute('SELECT COUNT(*) n FROM purchase_orders'+where_sql, args).fetchone()['n']
+            offset=(page-1)*page_size
+            rows=c.execute(
+                'SELECT id,out_trade_no,plan,ldc_amount,usd_value,user_sub,username,status,credit_trade_no,code,sub2api_user_id,sub2api_user_email,delivery_message,created_at,updated_at '
+                'FROM purchase_orders'+where_sql+' ORDER BY id DESC LIMIT ? OFFSET ?',
+                args+[page_size,offset]
+            ).fetchall()
+            items=[dict(r) for r in rows]
+            pages=(int(total)+page_size-1)//page_size if page_size else 0
+            status_counts={r['status']:r['n'] for r in c.execute('SELECT status, COUNT(*) n FROM purchase_orders GROUP BY status')}
+        return json_bytes({'ok':True,'items':items,'total':int(total),'page':page,'page_size':page_size,'pages':pages,'status_counts':status_counts})
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True

@@ -21,7 +21,7 @@ REMOTE_HOST="${REMOTE_HOST:-ali98}"
 PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://lklb.top}"
 APP_CONTAINER="${APP_CONTAINER:-sub2api}"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-sub2api-postgres}"
-BUILD_IMAGE="${BUILD_IMAGE:-golang:1.26.4}"
+BUILD_IMAGE="${BUILD_IMAGE:-golang:1.26.5}"
 GOPROXY="${GOPROXY:-https://goproxy.cn,https://goproxy.io,direct}"
 GOSUMDB="${GOSUMDB:-sum.golang.google.cn}"
 GO_BUILD_CACHE="${GO_BUILD_CACHE:-/tmp/sub2api-go-build-cache}"
@@ -298,8 +298,8 @@ curl -k -s -o /tmp/lklb-paymentview.js "$PUBLIC_BASE_URL/assets/$PAYMENT_ASSET"
 
 grep -q "LinuxDO 积分购买" /tmp/lklb-paymentview.js
 grep -q "前 10刀额度享特惠" /tmp/lklb-paymentview.js
-grep -q "支持自定义额度" /tmp/lklb-paymentview.js
 grep -q "10 LDC = 1刀" /tmp/lklb-paymentview.js
+grep -q "超出后按 20 LDC = 1刀" /tmp/lklb-paymentview.js
 grep -q "自定义 LDC" /tmp/lklb-buy.html
 grep -q "输入 LDC" /tmp/lklb-buy.html
 echo "page_verify=ok PaymentView-$PAYMENT_ASSET"

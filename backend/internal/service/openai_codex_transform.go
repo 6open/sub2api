@@ -14,6 +14,7 @@ var codexModelMap = map[string]string{
 	"gpt-5.6-sol":          "gpt-5.6-sol",
 	"gpt-5.6-terra":        "gpt-5.6-terra",
 	"gpt-5.6-luna":         "gpt-5.6-luna",
+	"gpt-5.6":              "gpt-5.6-sol",
 	"gpt-5.5":              "gpt-5.5",
 	"gpt-5.5-pro":          "gpt-5.5-pro",
 	"codex-auto-review":    "codex-auto-review",

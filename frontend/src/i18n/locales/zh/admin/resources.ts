@@ -301,7 +301,7 @@ export default {
       amount: '金额 ($)',
       ldc: 'LDC兑换码',
       ldcAmount: 'LDC 数量',
-      ldcHint: 'LDC 码按 LinuxDO 账号阶梯汇率兑换：前 10 刀 10:1，之后 50:1。',
+      ldcHint: 'LDC 码按 LinuxDO 账号阶梯汇率兑换：前 10 刀 10:1，之后 20:1。',
       value: '面值',
       count: '数量',
       generate: '生成',
@@ -370,6 +370,33 @@ export default {
       failedToGenerate: '生成兑换码失败',
       failedToUpdate: '更新兑换码失败',
       failedToDelete: '删除兑换码失败'
+    },
+
+    // LDC Shop Orders
+    ldcShop: {
+      title: 'LDC商店订单',
+      description: '查看 LinuxDO 积分店购买与自动到账记录',
+      searchPlaceholder: '搜索订单号/用户名/兑换码/邮箱...',
+      allStatus: '全部状态',
+      failedToLoad: '加载 LDC 商店订单失败',
+      columns: {
+        orderNo: '订单号',
+        linuxdoUser: 'LinuxDO 用户',
+        amount: '金额',
+        status: '状态',
+        sub2apiUser: '中转站用户',
+        code: '兑换码',
+        delivery: '发货说明',
+        createdAt: '创建时间'
+      },
+      status: {
+        credited: '已自动到账',
+        issued: '已发兑换码',
+        expired: '已过期',
+        created: '已创建',
+        create_failed: '创建失败',
+        pending_no_stock: '待处理/无库存'
+      }
     },
 
     // Announcements

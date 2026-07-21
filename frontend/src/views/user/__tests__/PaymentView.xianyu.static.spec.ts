@@ -7,7 +7,7 @@ describe('PaymentView static purchase entries', () => {
     const source = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
 
     expect(source).toContain('闲鱼购买额度')
-    expect(source).toContain('https://m.tb.cn/h.RFGn1sT?tk=UCk1gkZ6Cl5')
+    expect(source).toContain('https://m.tb.cn/h.8bWmQVo?tk=VCKygIjCm4N')
     expect(source).not.toContain('下单后请把 lklb 账号邮箱 / 用户名发给客服处理')
   })
 
@@ -18,9 +18,10 @@ describe('PaymentView static purchase entries', () => {
     expect(source).toContain('handleLinuxDoShopPurchase')
     expect(source).toContain('startLinuxDoShopHandoff')
     expect(source).toContain('前 10刀额度享特惠')
-    expect(source).toContain('支持自定义额度')
     expect(source).toContain('10 LDC = 1刀')
-    expect(source).toContain('超出后按 50 LDC = 1刀')
+    expect(source).toContain('超出后按 20 LDC = 1刀')
+    expect(source).not.toContain('支持自定义额度')
+    expect(source).not.toContain('点击购买时再认证')
     expect(source).toContain('立即购买')
   })
 

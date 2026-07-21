@@ -1,0 +1,13 @@
+[Unit]
+Description=sub2api fast severe-failure Feishu monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sub2api-feishu-fast-monitor
+Environment=SUB2API_FAST_MONITOR_CONFIG=/etc/sub2api-feishu-fast-monitor/config.json
+TimeoutStartSec=18s
+
+[Install]
+WantedBy=multi-user.target

@@ -114,6 +114,9 @@ func RegisterAdminRoutes(
 		// 邀请返利（专属用户管理）
 		registerAffiliateRoutes(admin, h)
 
+		// LDC 积分商店订单
+		registerLDCShopRoutes(admin, h)
+
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
 	}
@@ -142,6 +145,13 @@ func registerAuditLogRoutes(admin *gin.RouterGroup, h *handler.Handlers, _ middl
 		auditLogs.GET("/:id", h.Admin.AuditLog.Get)
 		// 清空需现场 TOTP 校验（在 handler 内强制），不复用 step-up sudo 窗口
 		auditLogs.POST("/clear", h.Admin.AuditLog.Clear)
+	}
+}
+
+func registerLDCShopRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	shop := admin.Group("/ldc-shop")
+	{
+		shop.GET("/orders", h.Admin.LDCShop.List)
 	}
 }
 
