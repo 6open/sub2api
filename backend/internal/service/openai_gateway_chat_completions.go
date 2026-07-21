@@ -72,6 +72,16 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 
 	if account.Platform == PlatformGrok {
+		if account.IsGrokOAuth() {
+			if eligible, reason := grokChatResponsesBridgeEligibility(body); eligible {
+				return s.forwardGrokChatCompletionsViaResponses(ctx, c, account, body, promptCacheKey, defaultMappedModel)
+			} else {
+				logger.L().Debug("grok chat_completions: using raw fallback",
+					zap.Int64("account_id", account.ID),
+					zap.String("reason", reason),
+				)
+			}
+		}
 		return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
 	}
 
@@ -186,8 +196,10 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		if err := json.Unmarshal(responsesBody, &reqBody); err != nil {
 			return nil, fmt.Errorf("unmarshal for codex transform: %w", err)
 		}
+		isJSONObjectFormat := strings.EqualFold(strings.TrimSpace(gjson.GetBytes(responsesBody, "text.format.type").String()), "json_object")
 		codexResult := applyCodexOAuthTransformWithOptions(reqBody, codexOAuthTransformOptions{
-			SkipDefaultInstructions: !isResponsesShape,
+			SkipDefaultInstructions:             !isResponsesShape,
+			OmitPromotedSystemMessagesFromInput: !isResponsesShape && !isJSONObjectFormat,
 		})
 		if !isResponsesShape {
 			ensureCodexOAuthInstructionsField(reqBody)
@@ -267,6 +279,13 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	// 8. Handle error response with failover
 	if resp.StatusCode >= 400 {
 		respBody, upstreamMsg := s.readOpenAIUpstreamError(resp)
+		if !agentIdentityTaskRecoveryWasTried(ctx) && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, respBody) {
+			expectedTaskID := account.GetCredential("task_id")
+			if err := s.recoverAgentIdentityTask(ctx, account, expectedTaskID); err != nil {
+				return nil, fmt.Errorf("agent identity task recovery failed: %w", err)
+			}
+			return s.ForwardAsChatCompletions(markAgentIdentityTaskRecoveryTried(ctx), c, account, body, promptCacheKey, defaultMappedModel)
+		}
 		if account.Type == AccountTypeAPIKey &&
 			openai_compat.ResolveResponsesSupport(account.Extra) == openai_compat.ResponsesSupportUnknown &&
 			!isResponsesEndpointSupportedByStatus(resp.StatusCode) {
@@ -425,6 +444,18 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 			return nil, s.newOpenAIStreamFailoverError(c, account, false, requestID, payload, message)
 		}
 		message = s.recordOpenAIStreamUpstreamError(c, account, false, requestID, "http_error", payload, message)
+		// response.failed 到达在 HTTP 200 SSE 流上，无真实 HTTP 错误码；统一走语义
+		// 状态推断 + body 归一化（与 /v1/responses 路径一致），使按错误码配置的规则可命中。
+		if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(
+			c, account.Platform, payload, message,
+		); matched {
+			if errMsg == "" {
+				errMsg = message
+			}
+			MarkResponseCommitted(c)
+			writeChatCompletionsError(c, status, errType, errMsg)
+			return nil, fmt.Errorf("upstream response failed (passthrough): %s", errMsg)
+		}
 		writeChatCompletionsError(c, http.StatusBadGateway, "upstream_error", message)
 		return nil, fmt.Errorf("upstream response failed: %s", message)
 	}
@@ -581,14 +612,26 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				return true
 			}
 			message = s.recordOpenAIStreamUpstreamError(c, account, false, requestID, "http_error", payloadBytes, message)
+			defaultStatus, defaultErrType, defaultMsg := http.StatusBadGateway, "upstream_error", message
+			// 统一走语义状态推断 + body 归一化（与 /v1/responses 路径一致），
+			// 使按错误码配置的透传规则可命中。
+			if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(
+				c, account.Platform, payloadBytes, message,
+			); matched {
+				if errMsg == "" {
+					errMsg = defaultMsg
+				}
+				defaultStatus, defaultErrType, defaultMsg = status, errType, errMsg
+				MarkResponseCommitted(c)
+			}
 			errorPayload, _ := json.Marshal(gin.H{
 				"error": gin.H{
-					"type":    "upstream_error",
-					"message": message,
+					"type":    defaultErrType,
+					"message": defaultMsg,
 				},
 			})
 			if c != nil && c.Writer != nil && !c.Writer.Written() {
-				writeChatCompletionsError(c, http.StatusBadGateway, "upstream_error", message)
+				writeChatCompletionsError(c, defaultStatus, defaultErrType, defaultMsg)
 				clientOutputStarted = true
 			} else if c != nil && c.Writer != nil && !clientDisconnected {
 				if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", errorPayload); err != nil {
@@ -738,9 +781,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	handleScanErr := func(err error) {
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			logger.L().Warn("openai chat_completions stream: read error",
+			logger.FromContext(c.Request.Context()).Warn("openai chat_completions stream: read error",
 				zap.Error(err),
-				zap.String("request_id", requestID),
+				zap.String("upstream_request_id", requestID),
 			)
 		}
 	}
@@ -779,7 +822,10 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 		if err := scanner.Err(); err != nil {
 			handleScanErr(err)
-			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
+			if clientDisconnected || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
+			}
+			return resultWithUsage(), newOpenAIUpstreamStreamReadError(err)
 		}
 		if frame, ok := parser.Finish(); ok {
 			if strings.TrimSpace(frame.Data) == "[DONE]" {
@@ -851,7 +897,10 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			}
 			if ev.err != nil {
 				handleScanErr(ev.err)
-				return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", ev.err)
+				if clientDisconnected || errors.Is(ev.err, context.Canceled) || errors.Is(ev.err, context.DeadlineExceeded) {
+					return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", ev.err)
+				}
+				return resultWithUsage(), newOpenAIUpstreamStreamReadError(ev.err)
 			}
 			lastDataAt = time.Now()
 			line := ev.line

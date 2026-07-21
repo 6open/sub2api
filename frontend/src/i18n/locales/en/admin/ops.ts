@@ -23,6 +23,7 @@ export default {
       lastRun: 'last_run:',
       lastSuccess: 'last_success:',
       lastError: 'last_error:',
+      result: 'Result',
       noData: 'No data.',
       loadingText: 'loading',
       ready: 'ready',
@@ -49,6 +50,7 @@ export default {
         timeRange: 'Time range',
         startTime: 'Start time (optional)',
         endTime: 'End time (optional)',
+        host: 'Host',
         component: 'Component',
         componentPlaceholder: 'e.g. http.access',
         keyId: 'KEY ID',
@@ -143,7 +145,12 @@ export default {
         '6h': 'Last 6 hours',
         '24h': 'Last 24 hours',
         '7d': 'Last 7 days',
-        '30d': 'Last 30 days'
+        '30d': 'Last 30 days',
+        custom: 'Custom Range'
+      },
+      customTimeRange: {
+        startTime: 'Start Time',
+        endTime: 'End Time'
       },
       openaiTokenStats: {
         title: 'OpenAI Token Request Stats',
@@ -259,6 +266,7 @@ export default {
         typeUpstream: 'Upstream',
         typeRequest: 'Request',
         typeAuth: 'Auth',
+        typeAccountAuth: 'Account Auth',
         typeRouting: 'Routing',
         typeInternal: 'Internal',
         endpoint: 'Endpoint',
@@ -284,6 +292,7 @@ export default {
         phase: {
           request: 'Request',
           auth: 'Auth',
+          account_auth: 'Account Auth',
           routing: 'Routing',
           upstream: 'Upstream',
           network: 'Network',
@@ -372,8 +381,6 @@ export default {
         suggestPlatform: 'Platform error: prioritize investigation and fix',
         suggestGeneric: 'See details for more context',
         apiKeyPrefix: 'Key Prefix',
-        attemptedKeyPrefix: 'Attempted Key Prefix',
-        deletedKeyOwner: 'Deleted Key Owner',
         keyDeletedBadge: 'Key Deleted'
       },
       requestDetails: {
@@ -703,8 +710,6 @@ export default {
         ignoreContextCanceledHint: 'When enabled, client disconnect (context canceled) errors will not be written to the error log.',
         ignoreNoAvailableAccounts: 'Ignore no available accounts errors',
         ignoreNoAvailableAccountsHint: 'When enabled, "No available accounts" errors will not be written to the error log (not recommended; usually a config issue).',
-        ignoreInvalidApiKeyErrors: 'Ignore invalid API key errors',
-        ignoreInvalidApiKeyErrorsHint: 'When enabled, invalid or missing API key errors (INVALID_API_KEY, API_KEY_REQUIRED) will not be written to the error log.',
         ignoreInsufficientBalanceErrors: 'Ignore Insufficient Balance Errors',
         ignoreInsufficientBalanceErrorsHint: 'When enabled, insufficient account balance errors will not be written to the error log.',
         autoRefresh: 'Auto Refresh',

@@ -6,7 +6,7 @@
         <button
           @click="toggleMobileSidebar"
           class="btn-ghost btn-icon lg:hidden"
-          aria-label="Toggle Menu"
+          :aria-label="t('common.toggleMenu')"
         >
           <Icon name="menu" size="md" />
         </button>
@@ -96,7 +96,7 @@
           <button
             @click="toggleDropdown"
             class="flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800"
-            aria-label="User Menu"
+            :aria-label="t('common.userMenu')"
           >
             <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 text-sm font-medium text-white shadow-sm">
               <img
@@ -249,6 +249,7 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { sanitizeUrl } from '@/utils/url'
 
 const router = useRouter()
 const route = useRoute()
@@ -262,7 +263,7 @@ const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
-const docUrl = computed(() => appStore.docUrl)
+const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const availableBalance = computed(() => Number(user.value?.balance || 0))
 const frozenBalance = computed(() => Number(user.value?.frozen_balance || 0))
