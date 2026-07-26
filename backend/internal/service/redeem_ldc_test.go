@@ -329,6 +329,9 @@ type ldcUserRepoStub struct {
 }
 
 func (r *ldcUserRepoStub) Create(context.Context, *User) error { panic("unexpected call") }
+func (r *ldcUserRepoStub) CreateWithEmailAliasGuard(context.Context, *User) error {
+	panic("unexpected call")
+}
 func (r *ldcUserRepoStub) GetByID(context.Context, int64) (*User, error) {
 	if r.user == nil {
 		return &User{}, nil
@@ -391,6 +394,9 @@ func (r *ldcUserRepoStub) BatchUpdateLimits(context.Context, []int64, *int, *int
 	panic("unexpected call")
 }
 func (r *ldcUserRepoStub) ExistsByEmail(context.Context, string) (bool, error) {
+	panic("unexpected call")
+}
+func (r *ldcUserRepoStub) ExistsByEmailAlias(context.Context, string) (bool, error) {
 	panic("unexpected call")
 }
 func (r *ldcUserRepoStub) RemoveGroupFromAllowedGroups(context.Context, int64) (int64, error) {
