@@ -35,7 +35,7 @@ type LKLBPaymentPromotion struct {
 }
 
 func lklbAugustPromotionWindow() (time.Time, time.Time) {
-	return time.Date(2026, time.August, 6, 0, 0, 0, 0, shanghaiLocation),
+	return time.Date(2026, time.August, 5, 0, 0, 0, 0, shanghaiLocation),
 		time.Date(2026, time.August, 9, 0, 0, 0, 0, shanghaiLocation)
 }
 

@@ -39,7 +39,7 @@ describe('PaymentView static purchase entries', () => {
     const source = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
 
     expect(source).toContain('支付宝限时直充 5 折')
-    expect(source).toContain('8月6日－8月8日，实付 ¥100 到账 $200')
+    expect(source).toContain('即刻起至8月8日，实付 ¥100 到账 $200')
     expect(source).toContain('promotionRemaining.toFixed(2)')
     expect(source).toContain('effectiveRechargeMultiplier')
     expect(source).toContain('validAmount.value <= promotionRemaining.value')

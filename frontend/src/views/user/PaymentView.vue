@@ -39,7 +39,7 @@
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p class="text-base font-semibold text-rose-700 dark:text-rose-300">支付宝限时直充 5 折</p>
-                  <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">8月6日－8月8日，实付 ¥100 到账 $200</p>
+                  <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">即刻起至8月8日，实付 ¥100 到账 $200</p>
                 </div>
                 <div class="text-right text-sm">
                   <p class="text-gray-500 dark:text-gray-400">本账号剩余优惠实付</p>

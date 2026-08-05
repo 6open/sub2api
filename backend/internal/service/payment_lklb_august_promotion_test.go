@@ -21,7 +21,7 @@ func TestLKLBAugustPromotionWindowAndEligibility(t *testing.T) {
 	require.False(t, isLKLBAlipayPromotionRequest(base, end))
 	require.False(t, isLKLBAlipayPromotionRequest(CreateOrderRequest{OrderType: payment.OrderTypeSubscription, PaymentType: payment.TypeAlipay}, start))
 	require.False(t, isLKLBAlipayPromotionRequest(CreateOrderRequest{OrderType: payment.OrderTypeBalance, PaymentType: payment.TypeWxpay}, start))
-	require.Equal(t, "2026-08-06T00:00:00+08:00", start.Format(time.RFC3339))
+	require.Equal(t, "2026-08-05T00:00:00+08:00", start.Format(time.RFC3339))
 	require.Equal(t, "2026-08-09T00:00:00+08:00", end.Format(time.RFC3339))
 }
 
