@@ -7,7 +7,7 @@ describe('PaymentView static purchase entries', () => {
     const source = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
 
     expect(source).toContain('闲鱼购买额度')
-    expect(source).toContain('https://m.tb.cn/h.8bWmQVo?tk=VCKygIjCm4N')
+    expect(source).toContain('https://m.tb.cn/h.8ci78UP?tk=LUDdgttOFxf')
     expect(source).not.toContain('下单后请把 lklb 账号邮箱 / 用户名发给客服处理')
   })
 
@@ -19,31 +19,38 @@ describe('PaymentView static purchase entries', () => {
     expect(source).toContain('startLinuxDoShopHandoff')
     expect(source).toContain('前 10刀额度享特惠')
     expect(source).toContain('10 LDC = 1刀')
-    expect(source).toContain('超出后按 20 LDC = 1刀')
+    expect(source).toContain('超出后按 50 LDC = 1刀')
     expect(source).not.toContain('支持自定义额度')
     expect(source).not.toContain('点击购买时再认证')
-    expect(source).toContain('立即购买')
+    expect(source).toContain('>购买</button>')
   })
-
-
-
-  it('uses equal-size promo panels with a warm Xianyu color treatment', () => {
+  it('uses the upstream stacked card layout with three presets', () => {
     const source = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
 
-    expect(source).toContain('lg:grid-cols-2')
-    expect(source).toContain('min-h-[210px]')
-    expect(source).toContain('border-orange-200')
-    expect(source).toContain('from-orange-50')
-    expect(source).toContain('shadow-orange-500/20')
-    expect(source).toContain('闲鱼客服购买')
+    expect(source).toContain('<!-- Recharge Account Card -->')
+    expect(source).toContain('class="card p-5"')
+    expect(source).toContain('class="card p-6"')
+    expect(source).toContain(':amounts="[1, 10, 100]"')
+    expect(source).not.toContain('max-w-2xl')
+    expect(source).not.toContain('[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]')
+  })
+
+  it('groups secondary purchase routes in one compact full-width card', () => {
+    const source = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
+
+    expect(source).toContain('其他购买方式')
+    expect(source).toContain('class="card overflow-hidden"')
+    expect(source).toContain('lg:grid-cols-3')
+    expect(source).toContain('lg:divide-x')
+    expect(source).not.toContain('min-h-[')
   })
 
   it('renders the QQ group entry on the purchase page', () => {
     const source = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
 
-    expect(source).toContain('link-lable交流群')
+    expect(source).toContain('Link-Label 交流群')
     expect(source).toContain('https://qm.qq.com/q/dqWgFGYbD2')
-    expect(source).toContain('点击链接加入群聊')
+    expect(source).toContain('>加入</a>')
   })
 
   it('keeps the purchase page usable when built-in payment checkout is disabled', () => {
@@ -53,6 +60,7 @@ describe('PaymentView static purchase entries', () => {
 
     expect(router).toContain("path: '/purchase'")
     expect(router).toContain('requiresPayment: false')
+    expect(router).not.toContain("descriptionKey: 'purchase.description'")
     expect(sidebar).toContain("{ path: '/purchase', label: t('nav.buySubscription')")
     expect(sidebar).not.toContain("{ path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment }")
     expect(view).toContain('Keep this page usable even when the built-in payment system is disabled')

@@ -6,9 +6,42 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 )
+
+func TestEasyPayCreateFallsBackToHostedCheckoutOnGatewayTimeout(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"code":1}`))
+	}))
+	defer server.Close()
+
+	provider := newTestEasyPay(t, server.URL)
+	provider.httpClient.Timeout = 10 * time.Millisecond
+	resp, err := provider.CreatePayment(context.Background(), payment.CreatePaymentRequest{
+		OrderID:     "order-timeout-fallback",
+		Amount:      "1.00",
+		PaymentType: payment.TypeAlipay,
+		Subject:     "Test recharge",
+	})
+	if err != nil {
+		t.Fatalf("CreatePayment returned error: %v", err)
+	}
+	payURL, err := url.Parse(resp.PayURL)
+	if err != nil {
+		t.Fatalf("parse pay URL: %v", err)
+	}
+	if payURL.Path != "/submit.php" {
+		t.Fatalf("pay URL path = %q, want /submit.php", payURL.Path)
+	}
+	if got := payURL.Query().Get("out_trade_no"); got != "order-timeout-fallback" {
+		t.Fatalf("out_trade_no = %q, want order-timeout-fallback", got)
+	}
+}
 
 func TestEasyPayQueryOrderStatusMapping(t *testing.T) {
 	t.Parallel()

@@ -85,10 +85,6 @@ func (s *AuthService) loginOrRegisterVerifiedEmailOAuth(
 	if isReservedEmail(email) {
 		return nil, nil, ErrEmailReserved
 	}
-	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
-		return nil, nil, err
-	}
-
 	identityUser, err := s.findEmailOAuthIdentityOwner(ctx, providerType, providerKey, providerSubject)
 	if err != nil {
 		return nil, nil, err
@@ -103,6 +99,9 @@ func (s *AuthService) loginOrRegisterVerifiedEmailOAuth(
 		user, err = s.userRepo.GetByEmail(ctx, email)
 		if err != nil {
 			if errors.Is(err, ErrUserNotFound) {
+				if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
+					return nil, nil, err
+				}
 				user, err = s.createEmailOAuthUser(ctx, email, input.Username, providerType, invitationCode, affiliateCode)
 				if err != nil {
 					return nil, nil, err
@@ -189,6 +188,7 @@ func (s *AuthService) createEmailOAuthUser(ctx context.Context, email, username,
 		RPMLimit:     defaultRPMLimit,
 		Status:       StatusActive,
 		SignupSource: providerType,
+		SignupIP:     signupIPFromContext(ctx),
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		if errors.Is(err, ErrEmailExists) {

@@ -42,3 +42,10 @@ func TestIsRegistrationEmailSuffixAllowed(t *testing.T) {
 	require.False(t, IsRegistrationEmailSuffixAllowed("user@c.cn", []string{"@a.com", "*.b.cn"}))
 	require.True(t, IsRegistrationEmailSuffixAllowed("user@any.com", []string{}))
 }
+
+func TestHasRegistrationEmailSubaddressTag(t *testing.T) {
+	require.True(t, HasRegistrationEmailSubaddressTag("user+promo@example.com"))
+	require.True(t, HasRegistrationEmailSubaddressTag(" USER+PROMO@EXAMPLE.COM "))
+	require.False(t, HasRegistrationEmailSubaddressTag("user@example.com"))
+	require.False(t, HasRegistrationEmailSubaddressTag("invalid+address"))
+}

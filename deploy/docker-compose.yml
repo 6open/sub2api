@@ -95,6 +95,12 @@ services:
       # Generate a secure secret: openssl rand -hex 32
       - JWT_SECRET=${JWT_SECRET:-}
       - JWT_EXPIRE_HOUR=${JWT_EXPIRE_HOUR:-24}
+      - OPEN_WEBUI_SSO_URL=${OPEN_WEBUI_SSO_URL:-}
+      - OPEN_WEBUI_SSO_VERIFY_SECRET=${OPEN_WEBUI_SSO_VERIFY_SECRET:-}
+      - OPEN_WEBUI_SERVICE_API_KEY_ID=${OPEN_WEBUI_SERVICE_API_KEY_ID:-}
+      - OPEN_WEBUI_DEFAULT_GROUP_ID=${OPEN_WEBUI_DEFAULT_GROUP_ID:-}
+      - OPEN_WEBUI_IMAGE_GROUP_ID=${OPEN_WEBUI_IMAGE_GROUP_ID:-}
+      - OPEN_WEBUI_FORWARD_USER_JWT_SECRET=${OPEN_WEBUI_FORWARD_USER_JWT_SECRET:-}
 
       # =======================================================================
       # Setup Configuration
@@ -185,14 +191,8 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "wget",
-          "-q",
-          "-T",
-          "5",
-          "-O",
-          "/dev/null",
-          "http://localhost:8080/health",
+          "CMD-SHELL",
+          "wget -q -T 5 -O /dev/null http://localhost:8080/health && wget -q -T 5 -O - http://localhost:8080/ | grep -Fq '<div id=\"app\"></div>'",
         ]
       interval: 30s
       timeout: 10s

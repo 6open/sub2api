@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,6 +185,57 @@ func TestBuildPaymentReturnURLWithoutResumeTokenStillIncludesOutTradeNo(t *testi
 	}
 	if query.Get("resume_token") != "" {
 		t.Fatalf("resume_token = %q, want empty", query.Get("resume_token"))
+	}
+}
+
+func TestBuildProviderPaymentReturnURLEasyPayUsesSingleResumeParameter(t *testing.T) {
+	t.Parallel()
+
+	got, err := buildProviderPaymentReturnURL(
+		payment.TypeEasyPay,
+		"https://example.com/payment/result?from=checkout#fragment",
+		42,
+		"sub2_42",
+		"resume-token",
+	)
+	if err != nil {
+		t.Fatalf("buildProviderPaymentReturnURL returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("url.Parse returned error: %v", err)
+	}
+	query := parsed.Query()
+	if len(query) != 1 || query.Get("resume_token") != "resume-token" {
+		t.Fatalf("query = %#v, want only resume_token", query)
+	}
+	if strings.Contains(got, "&") {
+		t.Fatalf("EasyPay return URL contains a query separator: %q", got)
+	}
+}
+
+func TestBuildProviderPaymentReturnURLEasyPayFallsBackToSingleOrderID(t *testing.T) {
+	t.Parallel()
+
+	got, err := buildProviderPaymentReturnURL(
+		payment.TypeEasyPay,
+		"https://example.com/payment/result?from=checkout",
+		42,
+		"sub2_42",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("buildProviderPaymentReturnURL returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("url.Parse returned error: %v", err)
+	}
+	query := parsed.Query()
+	if len(query) != 1 || query.Get("order_id") != "42" {
+		t.Fatalf("query = %#v, want only order_id", query)
 	}
 }
 

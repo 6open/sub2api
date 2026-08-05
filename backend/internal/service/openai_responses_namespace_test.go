@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"strconv"
 	"testing"
 
@@ -232,4 +233,38 @@ func TestStripOpenAIResponsesInputNamespacesKeepsToolCallNamespaces(t *testing.T
 	for index := 0; index < 8; index++ {
 		require.False(t, gjson.GetBytes(strippedAll, "input."+strconv.Itoa(index)+".namespace").Exists())
 	}
+}
+
+func TestFlattenOpenAIResponsesNamespacesStripsInputNamespaceWithoutDeclaration(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","stream":true,"input":[{"type":"function_call","call_id":"call_1","name":"send","namespace":"mcp","arguments":"{}"},{"type":"message","role":"user","namespace":"mcp","content":"hi"}]}`)
+
+	got, err := flattenOpenAIResponsesNamespaces(nil, body)
+	require.NoError(t, err)
+	require.NotContains(t, string(got), `"namespace"`)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(got, &decoded))
+	input, ok := decoded["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 2)
+	call, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "send", call["name"])
+	require.Equal(t, "function_call", call["type"])
+}
+
+func TestFlattenOpenAIResponsesNamespacesRewritesKnownAndStripsResidualInputNamespaces(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","tools":[{"type":"namespace","name":"team","tools":[{"type":"function","name":"send"}]}],"input":[{"type":"function_call","call_id":"call_1","name":"send","namespace":"team","arguments":"{}"},{"type":"function_call","call_id":"call_2","name":"other","namespace":"stale","arguments":"{}"}]}`)
+
+	got, err := flattenOpenAIResponsesNamespaces(nil, body)
+	require.NoError(t, err)
+	require.NotContains(t, string(got), `"namespace"`)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(got, &decoded))
+	input := decoded["input"].([]any)
+	first := input[0].(map[string]any)
+	second := input[1].(map[string]any)
+	require.Equal(t, "team__send", first["name"])
+	require.Equal(t, "other", second["name"])
 }

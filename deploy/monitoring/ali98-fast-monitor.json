@@ -15,10 +15,23 @@
       "fail_threshold": 2
     },
     {
-      "key": "ali47_public_health",
-      "label": "ali47 公网服务",
-      "url": "http://47.99.93.199/health",
+      "key": "ali98_public_frontend",
+      "label": "ali98 公网网站首页",
+      "url": "https://lklb.top/",
+      "resolve": "lklb.top:443:127.0.0.1",
+      "insecure_skip_verify": true,
       "expected_statuses": [200],
+      "expected_content": "<div id=\"app\"></div>",
+      "timeout_seconds": 5,
+      "fail_threshold": 2
+    },
+    {
+      "key": "ali47_public_health",
+      "label": "ali47 公网域名",
+      "url": "https://migo-ai.migomigo.com/health",
+      "resolve": "migo-ai.migomigo.com:443:47.99.220.197",
+      "expected_statuses": [200],
+      "expected_content": "\"status\":\"ok\"",
       "timeout_seconds": 5,
       "fail_threshold": 2
     },
@@ -38,5 +51,14 @@
     "window_seconds": 60,
     "min_severe_errors": 5,
     "query_fail_threshold": 2
+  },
+  "database_latency_burst": {
+    "enabled": true,
+    "runtime": "podman",
+    "container": "sub2api-postgres",
+    "window_seconds": 180,
+    "ttft_threshold_ms": 30000,
+    "critical_ttft_ms": 45000,
+    "min_slow_requests": 2
   }
 }

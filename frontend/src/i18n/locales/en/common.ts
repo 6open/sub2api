@@ -153,6 +153,8 @@ export default {
     dashboard: 'Dashboard',
     announcements: 'Announcements',
     apiKeys: 'API Keys',
+    aiChat: 'AI Chat / Image Design',
+    aiChatOpenFailed: 'Unable to open AI Chat. Please try again.',
     batchImage: 'Batch Images',
     usage: 'Usage',
     redeem: 'Redeem',
@@ -235,6 +237,7 @@ export default {
       USER_NOT_ACTIVE: 'Account has been disabled.',
     },
     registrationFailed: 'Registration failed. Please try again.',
+    emailSubaddressNotAllowed: 'Plus-address email aliases are not allowed. Use your original email address.',
     emailSuffixNotAllowed: 'This email domain is not allowed for registration.',
     emailSuffixNotAllowedWithAllowed:
       'This email domain is not allowed. Allowed domains: {suffixes}',

@@ -119,6 +119,7 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 		SetConcurrency(userIn.Concurrency).
 		SetStatus(userIn.Status).
 		SetSignupSource(userSignupSourceOrDefault(userIn.SignupSource)).
+		SetSignupIP(userIn.SignupIP).
 		SetNillableLastLoginAt(userIn.LastLoginAt).
 		SetNillableLastActiveAt(userIn.LastActiveAt).
 		SetRpmLimit(userIn.RPMLimit).
@@ -1389,6 +1390,7 @@ func applyUserEntityToService(dst *service.User, src *dbent.User) {
 	}
 	dst.ID = src.ID
 	dst.SignupSource = src.SignupSource
+	dst.SignupIP = src.SignupIP
 	dst.LastLoginAt = src.LastLoginAt
 	dst.LastActiveAt = src.LastActiveAt
 	dst.CreatedAt = src.CreatedAt

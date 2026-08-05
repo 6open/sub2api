@@ -228,6 +228,87 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 	return apiKeyEntityToService(m), nil
 }
 
+func (r *apiKeyRepository) GetOpenWebUIDefaultKey(ctx context.Context, userID int64) (string, error) {
+	credential, err := r.activeQuery().
+		Where(apikey.UserIDEQ(userID), apikey.IsOpenWebuiDefaultEQ(true)).
+		Select(apikey.FieldKey).
+		String(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return "", service.ErrOpenWebUIDefaultKeyNotFound
+		}
+		return "", err
+	}
+	return credential, nil
+}
+
+func (r *apiKeyRepository) GetOpenWebUIImageKey(ctx context.Context, userID, groupID int64) (string, error) {
+	credential, err := r.activeQuery().
+		Where(
+			apikey.UserIDEQ(userID),
+			apikey.GroupIDEQ(groupID),
+			apikey.NameEQ("Open WebUI Image"),
+		).
+		Select(apikey.FieldKey).
+		String(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return "", service.ErrOpenWebUIImageKeyNotFound
+		}
+		return "", err
+	}
+	return credential, nil
+}
+
+func (r *apiKeyRepository) SetOpenWebUIDefault(ctx context.Context, userID, apiKeyID int64) error {
+	apply := func(txCtx context.Context, client *dbent.Client) error {
+		exists, err := client.APIKey.Query().Where(
+			apikey.IDEQ(apiKeyID),
+			apikey.UserIDEQ(userID),
+			apikey.DeletedAtIsNil(),
+		).Exist(txCtx)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return service.ErrAPIKeyNotFound
+		}
+		if _, err := client.APIKey.Update().Where(
+			apikey.UserIDEQ(userID),
+			apikey.IsOpenWebuiDefaultEQ(true),
+			apikey.DeletedAtIsNil(),
+		).SetIsOpenWebuiDefault(false).Save(txCtx); err != nil {
+			return err
+		}
+		updated, err := client.APIKey.Update().Where(
+			apikey.IDEQ(apiKeyID),
+			apikey.UserIDEQ(userID),
+			apikey.DeletedAtIsNil(),
+		).SetIsOpenWebuiDefault(true).Save(txCtx)
+		if err != nil {
+			return err
+		}
+		if updated == 0 {
+			return service.ErrAPIKeyNotFound
+		}
+		return nil
+	}
+
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return apply(ctx, tx.Client())
+	}
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := apply(txCtx, tx.Client()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey, fields service.APIKeyUpdateFields) error {
 	// 空掩码代表调用方不改任何列，直接返回，避免产生一次无意义的整行写。
 	if fields.IsEmpty() {

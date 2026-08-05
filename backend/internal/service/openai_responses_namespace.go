@@ -123,7 +123,8 @@ func flattenOpenAIResponsesNamespaces(c *gin.Context, body []byte) ([]byte, erro
 	if err != nil {
 		return body, err
 	}
-	if !changed {
+	strippedInputNamespace := stripOpenAIResponsesInputNamespaceValues(requestBody["input"])
+	if !changed && !strippedInputNamespace {
 		return body, nil
 	}
 	rebuilt, err := marshalOpenAIUpstreamJSON(requestBody)
@@ -188,6 +189,23 @@ func stripOpenAIResponsesInputNamespaces(body []byte, keepToolCallNamespaces boo
 		return body, fmt.Errorf("replace OpenAI input after namespace deletion: %w", err)
 	}
 	return stripped, nil
+}
+
+func stripOpenAIResponsesInputNamespaceValues(value any) bool {
+	changed := false
+	items, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if object, ok := item.(map[string]any); ok {
+			if _, exists := object["namespace"]; exists {
+				delete(object, "namespace")
+				changed = true
+			}
+		}
+	}
+	return changed
 }
 
 func setOpenAIResponsesNamespaceNames(c *gin.Context, names map[string]apicompat.ResponsesNamespaceName) {

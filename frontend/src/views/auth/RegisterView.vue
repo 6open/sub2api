@@ -355,6 +355,7 @@ import { buildAuthErrorMessage } from '@/utils/authError'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import {
   formatRegistrationEmailSuffixWhitelistForMessage,
+  hasRegistrationEmailSubaddressTag,
   isRegistrationEmailSuffixAllowed,
   normalizeRegistrationEmailSuffixWhitelist
 } from '@/utils/registrationEmailPolicy'
@@ -895,6 +896,9 @@ function validateForm(): boolean {
     isValid = false
   } else if (!validateEmail(formData.email)) {
     errors.email = t('auth.invalidEmail')
+    isValid = false
+  } else if (hasRegistrationEmailSubaddressTag(formData.email)) {
+    errors.email = t('auth.emailSubaddressNotAllowed')
     isValid = false
   } else if (
     !isRegistrationEmailSuffixAllowed(formData.email, registrationEmailSuffixWhitelist.value)

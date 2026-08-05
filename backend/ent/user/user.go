@@ -47,6 +47,8 @@ const (
 	FieldTotpEnabledAt = "totp_enabled_at"
 	// FieldSignupSource holds the string denoting the signup_source field in the database.
 	FieldSignupSource = "signup_source"
+	// FieldSignupIP holds the string denoting the signup_ip field in the database.
+	FieldSignupIP = "signup_ip"
 	// FieldLastLoginAt holds the string denoting the last_login_at field in the database.
 	FieldLastLoginAt = "last_login_at"
 	// FieldLastActiveAt holds the string denoting the last_active_at field in the database.
@@ -210,6 +212,7 @@ var Columns = []string{
 	FieldTotpEnabled,
 	FieldTotpEnabledAt,
 	FieldSignupSource,
+	FieldSignupIP,
 	FieldLastLoginAt,
 	FieldLastActiveAt,
 	FieldBalanceNotifyEnabled,
@@ -280,6 +283,10 @@ var (
 	DefaultSignupSource string
 	// SignupSourceValidator is a validator for the "signup_source" field. It is called by the builders before save.
 	SignupSourceValidator func(string) error
+	// DefaultSignupIP holds the default value on creation for the "signup_ip" field.
+	DefaultSignupIP string
+	// SignupIPValidator is a validator for the "signup_ip" field. It is called by the builders before save.
+	SignupIPValidator func(string) error
 	// DefaultBalanceNotifyEnabled holds the default value on creation for the "balance_notify_enabled" field.
 	DefaultBalanceNotifyEnabled bool
 	// DefaultBalanceNotifyThresholdType holds the default value on creation for the "balance_notify_threshold_type" field.
@@ -378,6 +385,11 @@ func ByTotpEnabledAt(opts ...sql.OrderTermOption) OrderOption {
 // BySignupSource orders the results by the signup_source field.
 func BySignupSource(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSignupSource, opts...).ToFunc()
+}
+
+// BySignupIP orders the results by the signup_ip field.
+func BySignupIP(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSignupIP, opts...).ToFunc()
 }
 
 // ByLastLoginAt orders the results by the last_login_at field.

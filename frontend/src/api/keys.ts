@@ -131,13 +131,20 @@ export async function toggleStatus(id: number, status: 'active' | 'inactive'): P
   return update(id, { status })
 }
 
+/** Select which user-owned key Open WebUI uses for billing. */
+export async function setOpenWebUIDefault(id: number): Promise<ApiKey> {
+  const { data } = await apiClient.put<ApiKey>(`/keys/${id}/open-webui-default`)
+  return data
+}
+
 export const keysAPI = {
   list,
   getById,
   create,
   update,
   delete: deleteKey,
-  toggleStatus
+  toggleStatus,
+  setOpenWebUIDefault
 }
 
 export default keysAPI

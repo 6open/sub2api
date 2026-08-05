@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import base64, hashlib, hmac, html, json, os, secrets, sqlite3, subprocess, sys, time, traceback
+import base64, hashlib, hmac, html, json, os, secrets, sqlite3, subprocess, sys, threading, time, traceback
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
@@ -35,11 +35,16 @@ CONNECT_REDIRECT_URI=PUBLIC_BASE_URL+'/api/linuxdo-connect/callback'
 LDC_PID=os.environ.get('LINUXDO_CREDIT_PID') or os.environ.get('LDC_PID','')
 LDC_KEY=os.environ.get('LINUXDO_CREDIT_KEY') or os.environ.get('LDC_KEY','')
 LDC_SUBMIT_URL=os.environ.get('LINUXDO_CREDIT_SUBMIT_URL','https://credit.linux.do/epay/pay/submit.php')
+LDC_QUERY_URL=os.environ.get('LINUXDO_CREDIT_QUERY_URL','').strip()
+LDC_QUERY_INTERVAL_SECONDS=max(2,int(os.environ.get('LINUXDO_CREDIT_QUERY_INTERVAL_SECONDS','10')))
 OUTBOUND_PROXY=os.environ.get('OUTBOUND_PROXY') or os.environ.get('HTTPS_PROXY') or os.environ.get('HTTP_PROXY') or ''
 SUB2API_BASE_URL=os.environ.get('SUB2API_BASE_URL','http://127.0.0.1:18080/api/v1').rstrip('/')
 CUSTOM_MIN_USD=int(os.environ.get('CUSTOM_MIN_USD','1'))
 CUSTOM_MAX_USD=int(os.environ.get('CUSTOM_MAX_USD','100'))
 REDEEM_CODE_PREFIX=os.environ.get('REDEEM_CODE_PREFIX','LDC-')
+
+_credit_query_lock=threading.Lock()
+_credit_query_last_attempt={}
 
 PLANS={
     'usd1': {'label':'1 刀额度','usd_value':1,'redeem_value':1,'ldc':'50.00','title':'LKLB 中转站 1刀额度'},
@@ -49,7 +54,7 @@ PLANS={
 
 PROMO_USD_LIMIT=10
 PROMO_LDC_PER_USD=10
-NORMAL_LDC_PER_USD=20
+NORMAL_LDC_PER_USD=50
 
 def remaining_promo_usd(issued_usd_value):
     try:
@@ -429,6 +434,48 @@ def http_get_json(url, headers=None, timeout=20):
     r=opener().open(req, timeout=timeout)
     return json.loads(r.read().decode('utf-8'))
 
+def credit_query_endpoint():
+    if LDC_QUERY_URL:
+        return LDC_QUERY_URL
+    parsed=urlparse(LDC_SUBMIT_URL)
+    if not parsed.scheme or not parsed.netloc or '/pay/' not in parsed.path:
+        raise RuntimeError('LinuxDO Credit query URL is not configured')
+    prefix=parsed.path.split('/pay/',1)[0]
+    return '{}://{}{}{}'.format(parsed.scheme,parsed.netloc,prefix,'/api.php')
+
+def query_credit_order(out_trade_no):
+    if not LDC_PID or not LDC_KEY:
+        raise RuntimeError('LinuxDO Credit is not configured')
+    params={
+        'act':'order',
+        'pid':LDC_PID,
+        'key':LDC_KEY,
+        'out_trade_no':str(out_trade_no),
+    }
+    data=http_get_json(credit_query_endpoint()+'?'+urlencode(params), timeout=10)
+    if not isinstance(data,dict) or str(data.get('code','')) != '1':
+        msg=data.get('msg') if isinstance(data,dict) else 'invalid response'
+        raise RuntimeError('Credit query failed: '+str(msg or 'unknown error'))
+    if str(data.get('out_trade_no') or '') != str(out_trade_no):
+        raise RuntimeError('Credit query returned a different order')
+    if str(data.get('pid') or '') != str(LDC_PID):
+        raise RuntimeError('Credit query returned a different merchant')
+    return data
+
+def claim_credit_query(out_trade_no, force=False):
+    now=time.monotonic()
+    with _credit_query_lock:
+        last=_credit_query_last_attempt.get(str(out_trade_no),0)
+        if not force and now-last < LDC_QUERY_INTERVAL_SECONDS:
+            return False
+        _credit_query_last_attempt[str(out_trade_no)]=now
+        if len(_credit_query_last_attempt) > 2048:
+            cutoff=now-3600
+            for key,checked_at in list(_credit_query_last_attempt.items()):
+                if checked_at < cutoff:
+                    _credit_query_last_attempt.pop(key,None)
+        return True
+
 def http_post_json_direct(url, obj, headers=None, timeout=10):
     body=json.dumps(obj, ensure_ascii=False).encode('utf-8')
     req=urllib.request.Request(url, data=body, method='POST', headers={'Content-Type':'application/json', 'User-Agent':'lklb-code-shop/1.1', **(headers or {})})
@@ -662,6 +709,56 @@ def handle_credit_notify(params, method, headers, client):
     issue_legacy(ok,oid,params,method,headers,client)
     return 'success'
 
+PURCHASE_ORDER_RESULT_FIELDS='out_trade_no,plan,ldc_amount,usd_value,username,status,code,credit_trade_no,sub2api_user_id,sub2api_user_email,delivery_message,created_at,updated_at'
+
+def reconcile_credit_order(out_trade_no, force=False):
+    with conn() as c:
+        po=c.execute('SELECT out_trade_no,ldc_amount,status FROM purchase_orders WHERE out_trade_no=?',(out_trade_no,)).fetchone()
+    if not po or po['status'] != 'created' or not claim_credit_query(out_trade_no,force):
+        return False
+    try:
+        remote=query_credit_order(out_trade_no)
+        if str(remote.get('status','')) != '1':
+            return False
+        paid=str(remote.get('money') or '')
+        if not paid or float(paid) != float(po['ldc_amount']):
+            raise RuntimeError('Credit query returned a different amount')
+        trade_no=str(remote.get('trade_no') or '')
+        if not trade_no:
+            raise RuntimeError('Credit query returned no trade number')
+        params={
+            'money':paid,
+            'name':str(remote.get('name') or ''),
+            'out_trade_no':str(out_trade_no),
+            'pid':str(remote.get('pid') or LDC_PID),
+            'trade_no':trade_no,
+            'trade_status':'TRADE_SUCCESS',
+            'type':str(remote.get('type') or 'epay'),
+        }
+        params['sign']=epay_sign(params,LDC_KEY)
+        params['sign_type']='MD5'
+        if handle_credit_notify(params,'QUERY',{},'127.0.0.1') != 'success':
+            raise RuntimeError('Credit reconciliation was rejected')
+        return True
+    except Exception as e:
+        sys.stderr.write('[credit-reconcile] {}: {}\n'.format(out_trade_no,repr(e)))
+        return False
+
+def load_purchase_order(order_id, reconcile=False):
+    with conn() as c:
+        po=c.execute(
+            'SELECT '+PURCHASE_ORDER_RESULT_FIELDS+' FROM purchase_orders WHERE out_trade_no=? OR credit_trade_no=?',
+            (order_id,order_id),
+        ).fetchone()
+    if po and reconcile and po['status'] == 'created':
+        reconcile_credit_order(po['out_trade_no'])
+        with conn() as c:
+            po=c.execute(
+                'SELECT '+PURCHASE_ORDER_RESULT_FIELDS+' FROM purchase_orders WHERE out_trade_no=? OR credit_trade_no=?',
+                (order_id,order_id),
+            ).fetchone()
+    return po
+
 class H(BaseHTTPRequestHandler):
     server_version='lklb-code-shop/1.1'
     def log_message(self, fmt, *args): sys.stderr.write('%s - - [%s] %s\n'%(self.client_address[0], self.log_date_time_string(), fmt%args))
@@ -763,7 +860,7 @@ class H(BaseHTTPRequestHandler):
             login_html="<div class='login-note'>已登录：{}</div> <a class='btn2' href='/api/linuxdo-connect/logout'>退出</a>".format(html.escape(user.get('username','')))
         else:
             login_html="<div class='login-note'>点击购买时使用 LinuxDO 登录</div>"
-        body=["<div class='hero'><div><h1>LKLB LDC 充值</h1><p class='subtitle'>阶梯计价：每个账号前 100 LDC 可兑换 10刀额度；超出部分按 20 LDC 兑换 1刀额度。</p>{}</div></div>".format(login_html)]
+        body=["<div class='hero'><div><h1>LKLB LDC 充值</h1><p class='subtitle'>阶梯计价：每个账号前 100 LDC 可兑换 10刀额度；超出部分按 50 LDC 兑换 1刀额度。</p>{}</div></div>".format(login_html)]
         body.append("<div class='plans'>")
         fixed_ldc = [('10','10 LDC'), ('50','50 LDC'), ('100','100 LDC')]
         for amount,label in fixed_ldc:
@@ -828,9 +925,9 @@ class H(BaseHTTPRequestHandler):
     def api_order(self,params):
         oid=first(params,['order_id','out_trade_no','trade_no','order_no','id'])
         if not oid: return json_bytes({'ok':False,'error':'missing order_id'},400)
+        po=load_purchase_order(oid,reconcile=True)
+        if po: return json_bytes({'ok':True,'order':dict(po)})
         with conn() as c:
-            po=c.execute('SELECT out_trade_no,plan,ldc_amount,usd_value,username,status,code,credit_trade_no,sub2api_user_id,sub2api_user_email,delivery_message,created_at,updated_at FROM purchase_orders WHERE out_trade_no=? OR credit_trade_no=?',(oid,oid)).fetchone()
-            if po: return json_bytes({'ok':True,'order':dict(po)})
             row=c.execute('SELECT order_key,linuxdo_order_id,status,code,created_at,updated_at,buyer_key,buyer_label FROM orders WHERE order_key=? OR linuxdo_order_id=?',(oid,oid)).fetchone()
         if not row: return json_bytes({'ok':False,'error':'order not found'},404)
         return json_bytes({'ok':True,'order':dict(row)})
@@ -838,12 +935,12 @@ class H(BaseHTTPRequestHandler):
         oid=first(params,['order_id','out_trade_no','trade_no','order_no','id'])
         row=None; err=''
         if oid:
+            r=load_purchase_order(oid,reconcile=True)
+            if r: row=dict(r); row['order_key']=row['out_trade_no']
+        if oid and not row:
             with conn() as c:
-                r=c.execute('SELECT out_trade_no,plan,ldc_amount,usd_value,username,status,code,credit_trade_no,sub2api_user_id,sub2api_user_email,delivery_message,created_at,updated_at FROM purchase_orders WHERE out_trade_no=? OR credit_trade_no=?',(oid,oid)).fetchone()
-                if r: row=dict(r); row['order_key']=row['out_trade_no']
-                else:
-                    r=c.execute('SELECT order_key,linuxdo_order_id,status,code,created_at,updated_at,buyer_key,buyer_label FROM orders WHERE order_key=? OR linuxdo_order_id=?',(oid,oid)).fetchone()
-                    row=dict(r) if r else None
+                r=c.execute('SELECT order_key,linuxdo_order_id,status,code,created_at,updated_at,buyer_key,buyer_label FROM orders WHERE order_key=? OR linuxdo_order_id=?',(oid,oid)).fetchone()
+                row=dict(r) if r else None
             if not row: err='未找到订单，请稍后刷新或检查订单号。'
         body=['<h1>订单兑换码</h1>']
         if row:

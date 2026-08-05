@@ -281,6 +281,20 @@ func (_u *UserUpdate) SetNillableSignupSource(v *string) *UserUpdate {
 	return _u
 }
 
+// SetSignupIP sets the "signup_ip" field.
+func (_u *UserUpdate) SetSignupIP(v string) *UserUpdate {
+	_u.mutation.SetSignupIP(v)
+	return _u
+}
+
+// SetNillableSignupIP sets the "signup_ip" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableSignupIP(v *string) *UserUpdate {
+	if v != nil {
+		_u.SetSignupIP(*v)
+	}
+	return _u
+}
+
 // SetLastLoginAt sets the "last_login_at" field.
 func (_u *UserUpdate) SetLastLoginAt(v time.Time) *UserUpdate {
 	_u.mutation.SetLastLoginAt(v)
@@ -979,6 +993,11 @@ func (_u *UserUpdate) check() error {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SignupIP(); ok {
+		if err := user.SignupIPValidator(v); err != nil {
+			return &ValidationError{Name: "signup_ip", err: fmt.Errorf(`ent: validator failed for field "User.signup_ip": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -1056,6 +1075,9 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.SignupSource(); ok {
 		_spec.SetField(user.FieldSignupSource, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SignupIP(); ok {
+		_spec.SetField(user.FieldSignupIP, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.LastLoginAt(); ok {
 		_spec.SetField(user.FieldLastLoginAt, field.TypeTime, value)
@@ -1957,6 +1979,20 @@ func (_u *UserUpdateOne) SetNillableSignupSource(v *string) *UserUpdateOne {
 	return _u
 }
 
+// SetSignupIP sets the "signup_ip" field.
+func (_u *UserUpdateOne) SetSignupIP(v string) *UserUpdateOne {
+	_u.mutation.SetSignupIP(v)
+	return _u
+}
+
+// SetNillableSignupIP sets the "signup_ip" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableSignupIP(v *string) *UserUpdateOne {
+	if v != nil {
+		_u.SetSignupIP(*v)
+	}
+	return _u
+}
+
 // SetLastLoginAt sets the "last_login_at" field.
 func (_u *UserUpdateOne) SetLastLoginAt(v time.Time) *UserUpdateOne {
 	_u.mutation.SetLastLoginAt(v)
@@ -2668,6 +2704,11 @@ func (_u *UserUpdateOne) check() error {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SignupIP(); ok {
+		if err := user.SignupIPValidator(v); err != nil {
+			return &ValidationError{Name: "signup_ip", err: fmt.Errorf(`ent: validator failed for field "User.signup_ip": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -2762,6 +2803,9 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.SignupSource(); ok {
 		_spec.SetField(user.FieldSignupSource, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SignupIP(); ok {
+		_spec.SetField(user.FieldSignupIP, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.LastLoginAt(); ok {
 		_spec.SetField(user.FieldLastLoginAt, field.TypeTime, value)

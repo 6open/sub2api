@@ -15,10 +15,28 @@
       "fail_threshold": 2
     },
     {
+      "key": "ali47_public_health",
+      "label": "ali47 公网域名",
+      "url": "https://migo-ai.migomigo.com/health",
+      "expected_statuses": [200],
+      "expected_content": "\"status\":\"ok\"",
+      "timeout_seconds": 5,
+      "fail_threshold": 2
+    },
+    {
       "key": "ali98_public_health",
       "label": "ali98 公网服务",
       "url": "https://lklb.top/health",
       "expected_statuses": [200],
+      "timeout_seconds": 5,
+      "fail_threshold": 2
+    },
+    {
+      "key": "ali98_public_frontend",
+      "label": "ali98 公网网站首页",
+      "url": "https://lklb.top/",
+      "expected_statuses": [200],
+      "expected_content": "<div id=\"app\"></div>",
       "timeout_seconds": 5,
       "fail_threshold": 2
     },

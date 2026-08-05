@@ -181,6 +181,11 @@ func (e *EasyPay) createAPIPayment(ctx context.Context, req payment.CreatePaymen
 
 	body, err := e.post(ctx, e.apiBase()+"/mapi.php", params)
 	if err != nil {
+		// A hosted checkout URL can still complete the same merchant order when
+		// the gateway's server-to-server API is temporarily unavailable.
+		if ctx.Err() == nil {
+			return e.createRedirectPayment(req)
+		}
 		return nil, fmt.Errorf("easypay create: %w", err)
 	}
 	var resp struct {

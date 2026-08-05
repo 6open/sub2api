@@ -4,6 +4,7 @@
 import base64
 import concurrent.futures
 import copy
+import fcntl
 import hashlib
 import hmac
 import json
@@ -18,6 +19,15 @@ CONFIG_PATH = os.environ.get(
     "SUB2API_FAST_MONITOR_CONFIG",
     "/etc/sub2api-feishu-fast-monitor/config.json",
 )
+NOTIFICATION_RATE_STATE_PATH = "/var/lib/sub2api-feishu-monitor/notification-rate-limit.json"
+
+CATEGORY_STYLES = {
+    "error": ("🔴", "错误"),
+    "warning": ("🟠", "警告"),
+    "reminder": ("🟡", "提醒"),
+    "normal": ("🟢", "正常"),
+}
+CATEGORY_PRIORITY = {"normal": 0, "reminder": 1, "warning": 2, "error": 3}
 
 
 def load_json(path, default):
@@ -37,6 +47,17 @@ def save_json(path, data):
     os.replace(temporary_path, path)
 
 
+def notification_category(issues, resolved):
+    if not issues:
+        return "normal"
+    categories = [
+        issue.get("category", "error")
+        for issue in issues
+        if issue.get("category", "error") in CATEGORY_STYLES
+    ]
+    return max(categories or ["error"], key=lambda value: CATEGORY_PRIORITY[value])
+
+
 def sign(secret, timestamp):
     string_to_sign = f"{timestamp}\n{secret}".encode("utf-8")
     digest = hmac.new(string_to_sign, b"", digestmod=hashlib.sha256).digest()
@@ -44,15 +65,15 @@ def sign(secret, timestamp):
 
 
 def send_feishu(feishu_config, monitor_config, issues, resolved):
-    timestamp = str(int(time.time()))
+    category = notification_category(issues, resolved)
+    icon, category_label = CATEGORY_STYLES[category]
+    now = int(time.time())
+    timestamp = str(now)
     service_label = monitor_config.get(
         "service_label", feishu_config.get("service_label", "sub2api")
     )
-    service_symbol = monitor_config.get(
-        "service_symbol", feishu_config.get("service_symbol", "[FAST]")
-    )
     lines = [
-        f"{service_symbol} {service_label} 严重故障快报",
+        f"{icon} {category_label}｜{service_label} 快速监控",
         "",
         f"时间：{time.strftime('%Y-%m-%d %H:%M:%S %z')}",
     ]
@@ -70,30 +91,57 @@ def send_feishu(feishu_config, monitor_config, issues, resolved):
     if secret:
         payload["sign"] = sign(secret, timestamp)
 
-    request = urllib.request.Request(
-        feishu_config["webhook"],
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
+    rate_state_path = feishu_config.get(
+        "notification_rate_limit_state_path", NOTIFICATION_RATE_STATE_PATH
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        body = response.read().decode("utf-8", "replace")
-        if response.status >= 300:
-            raise RuntimeError(body)
-        result = json.loads(body)
-        if result.get("code") != 0:
-            raise RuntimeError(body)
+    interval = max(
+        60, int(feishu_config.get("non_normal_min_interval_seconds", 60))
+    )
+    os.makedirs(os.path.dirname(rate_state_path), exist_ok=True)
+    with open(f"{rate_state_path}.lock", "a+", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        rate_state = load_json(rate_state_path, {})
+        last_sent_at = int(rate_state.get("last_non_normal_sent_at", 0))
+        if category != "normal" and now - last_sent_at < interval:
+            wait_seconds = interval - (now - last_sent_at)
+            print(f"defer {category} notification for {wait_seconds}s due to rate limit")
+            return False
+
+        request = urllib.request.Request(
+            feishu_config["webhook"],
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = response.read().decode("utf-8", "replace")
+            if response.status >= 300:
+                raise RuntimeError(body)
+            result = json.loads(body)
+            if result.get("code") != 0:
+                raise RuntimeError(body)
+
+        if category != "normal":
+            save_json(rate_state_path, {
+                "last_non_normal_sent_at": now,
+                "last_category": category,
+                "last_service": service_label,
+            })
+        return True
 
 
 def probe_http(check):
     timeout = max(1, int(check.get("timeout_seconds", 5)))
+    expected_content = str(check.get("expected_content", ""))
     command = [
         "curl",
         "-sS",
         "-o",
-        "/dev/null",
+        "-" if expected_content else "/dev/null",
         "-w",
-        "%{http_code}|%{time_total}",
+        "\n__SUB2API_MONITOR_META__%{http_code}|%{time_total}"
+        if expected_content
+        else "%{http_code}|%{time_total}",
         "--connect-timeout",
         str(min(timeout, 3)),
         "--max-time",
@@ -102,6 +150,11 @@ def probe_http(check):
     proxy = check.get("proxy")
     if proxy:
         command.extend(["--proxy", proxy])
+    resolve = check.get("resolve")
+    if resolve:
+        command.extend(["--resolve", str(resolve)])
+    if check.get("insecure_skip_verify", False):
+        command.append("--insecure")
     command.append(check["url"])
 
     completed = subprocess.run(
@@ -113,6 +166,11 @@ def probe_http(check):
         timeout=timeout + 2,
     )
     raw = completed.stdout.strip()
+    response_body = ""
+    if expected_content:
+        response_body, marker, raw = raw.rpartition("__SUB2API_MONITOR_META__")
+        if not marker:
+            raw = ""
     status_text, _, duration_text = raw.partition("|")
     try:
         status = int(status_text)
@@ -129,6 +187,9 @@ def probe_http(check):
     else:
         ok = completed.returncode == 0 and 100 <= status < 500
     error = completed.stderr.strip()[-240:]
+    if ok and expected_content and expected_content not in response_body:
+        ok = False
+        error = f"expected content marker missing: {expected_content}"[-240:]
     return check, ok, status, latency_ms, error
 
 
@@ -158,6 +219,7 @@ def collect_probe_issues(config, state):
         if item_state["fail_count"] >= threshold:
             label = check.get("label", key)
             issues[f"probe:{key}"] = {
+                "category": "error",
                 "title": f"{label}连续失败",
                 "body": (
                     f"连续失败 {item_state['fail_count']} 次，"
@@ -240,6 +302,7 @@ def collect_error_burst_issues(config, state):
         threshold = max(1, int(database_config.get("query_fail_threshold", 2)))
         if database_state["query_fail_count"] >= threshold:
             issues["database:query"] = {
+                "category": "error",
                 "title": "监控数据库连续不可访问",
                 "body": (
                     f"连续失败 {database_state['query_fail_count']} 次，"
@@ -272,6 +335,7 @@ def collect_error_burst_issues(config, state):
         if total_errors >= threshold
     )
     issues["database:severe_error_burst"] = {
+        "category": "error",
         "title": "一分钟内严重错误爆发",
         "body": (
             f"最近 {window_seconds} 秒严重错误 {total_errors} 个；"
@@ -282,6 +346,111 @@ def collect_error_burst_issues(config, state):
         "severity_level": severity_bucket,
     }
     return issues
+
+
+def query_slow_ai_requests(database_config):
+    runtime = database_config.get("runtime", "docker")
+    container = database_config.get("container", "sub2api-postgres")
+    seconds = max(30, int(database_config.get("window_seconds", 180)))
+    threshold_ms = max(1000, int(database_config.get("ttft_threshold_ms", 30000)))
+    sql = f"""
+    select coalesce(json_agg(row_to_json(t)), '[]'::json)
+    from (
+      select account_id,
+             coalesce(nullif(model, ''), 'unknown') as model,
+             count(*) as slow_requests,
+             round(avg(first_token_ms)) as avg_ttft_ms,
+             max(first_token_ms) as max_ttft_ms,
+             max(id) as max_usage_id
+      from usage_logs
+      where created_at > now() - interval '{seconds} seconds'
+        and first_token_ms >= {threshold_ms}
+      group by account_id, 2
+      order by count(*) desc, max(first_token_ms) desc
+    ) t;
+    """
+    command = [
+        runtime,
+        "exec",
+        "-i",
+        container,
+        "sh",
+        "-lc",
+        'psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -t -A',
+    ]
+    completed = subprocess.run(
+        command,
+        input=sql,
+        universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=10,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or completed.stdout.strip())
+    return json.loads(completed.stdout.strip() or "[]")
+
+
+def collect_latency_burst_issues(config, state):
+    latency_config = config.get("database_latency_burst", {})
+    if not latency_config.get("enabled", False):
+        return {}
+
+    latency_state = state.setdefault("database_latency_burst", {})
+    try:
+        rows = query_slow_ai_requests(latency_config)
+        latency_state["query_fail_count"] = 0
+        latency_state["last_ok_at"] = int(time.time())
+        latency_state.pop("last_error", None)
+    except Exception as exc:
+        latency_state["query_fail_count"] = int(
+            latency_state.get("query_fail_count", 0)
+        ) + 1
+        latency_state["last_error"] = str(exc)[-300:]
+        return {}
+
+    total_slow = sum(int(row.get("slow_requests") or 0) for row in rows)
+    max_ttft = max((int(row.get("max_ttft_ms") or 0) for row in rows), default=0)
+    minimum = max(1, int(latency_config.get("min_slow_requests", 2)))
+    critical_ms = max(
+        int(latency_config.get("ttft_threshold_ms", 30000)),
+        int(latency_config.get("critical_ttft_ms", 45000)),
+    )
+    if total_slow < minimum and max_ttft < critical_ms:
+        return {}
+
+    details = [
+        (
+            f"账号 {row.get('account_id') or 'unknown'}/{row.get('model')} "
+            f"x{row.get('slow_requests')}，平均 {row.get('avg_ttft_ms')}ms，"
+            f"最高 {row.get('max_ttft_ms')}ms"
+        )
+        for row in rows[:5]
+    ]
+    max_usage_id = max(int(row.get("max_usage_id") or 0) for row in rows)
+    affected_scopes = sorted(
+        f"{row.get('account_id') or 'unknown'}/{row.get('model')}" for row in rows
+    )
+    severity_bucket = max(
+        threshold
+        for threshold in (1, 2, 5, 10, 20, 50)
+        if total_slow >= threshold
+    )
+    window_seconds = max(30, int(latency_config.get("window_seconds", 180)))
+    return {
+        "database:ai_ttft_degraded": {
+            "category": "warning",
+            "title": "AI 首 Token 延迟持续过高",
+            "body": (
+                f"最近 {window_seconds} 秒有 {total_slow} 次慢请求；"
+                + "；".join(details)
+            ),
+            "activity_token": str(max_usage_id),
+            "scope_items": affected_scopes,
+            "severity_level": severity_bucket,
+        }
+    }
 
 
 def confirm_recovery(config, state, detected_issues):
@@ -370,6 +539,7 @@ def select_notifications(config, state, issues, previous_active, now):
                 incident.get("notifications_sent", 1)
             ) + 1
             reminder = dict(issue)
+            reminder["category"] = "reminder"
             reminder["body"] = f"持续故障 {elapsed // 60} 分钟更新；{issue['body']}"
             sendable.append(reminder)
 
@@ -396,6 +566,7 @@ def main():
 
     detected_issues = collect_probe_issues(config, state)
     detected_issues.update(collect_error_burst_issues(config, state))
+    detected_issues.update(collect_latency_burst_issues(config, state))
     issues = confirm_recovery(config, state, detected_issues)
     current_active = set(issues)
 
@@ -417,12 +588,18 @@ def main():
 
     if sendable or resolved:
         try:
-            send_feishu(feishu_config, config, sendable, resolved)
+            sent = send_feishu(feishu_config, config, sendable, resolved)
         except Exception:
             state["incidents"] = notification_state
             state["active"] = sorted(previous_active)
             save_json(state_path, state)
             raise
+        if not sent:
+            state["incidents"] = notification_state
+            state["active"] = sorted(previous_active)
+            state["updated_at"] = now
+            save_json(state_path, state)
+            return
 
     for key in resolved_keys:
         state.get("incidents", {}).pop(key, None)

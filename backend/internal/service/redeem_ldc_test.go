@@ -26,9 +26,9 @@ func TestCalculateLDCCodeCreditUSDUsesTieredUserQuota(t *testing.T) {
 		wantCreditUSD float64
 	}{
 		{name: "all promo", ldcAmount: 100, issuedUSD: 0, wantCreditUSD: 10},
-		{name: "partial promo then normal", ldcAmount: 100, issuedUSD: 6, wantCreditUSD: 7},
-		{name: "promo exhausted", ldcAmount: 100, issuedUSD: 10, wantCreditUSD: 5},
-		{name: "more than promo from zero", ldcAmount: 150, issuedUSD: 0, wantCreditUSD: 12.5},
+		{name: "partial promo then normal", ldcAmount: 100, issuedUSD: 6, wantCreditUSD: 5.2},
+		{name: "promo exhausted", ldcAmount: 100, issuedUSD: 10, wantCreditUSD: 2},
+		{name: "more than promo from zero", ldcAmount: 150, issuedUSD: 0, wantCreditUSD: 11},
 	}
 
 	for _, tt := range tests {
@@ -101,8 +101,8 @@ func TestRedeemLDCCodeCreditsTieredUSDByUserHistoryWithLinuxDoBinding(t *testing
 
 	got, err := svc.Redeem(ctx, user.ID, code.Code)
 	require.NoError(t, err)
-	require.InDelta(t, 7, userRepo.lastBalanceAmount, 0.000001)
-	require.InDelta(t, 7, got.Value, 0.000001)
+	require.InDelta(t, 5.2, userRepo.lastBalanceAmount, 0.000001)
+	require.InDelta(t, 5.2, got.Value, 0.000001)
 
 	reloaded, err := client.RedeemCode.Get(ctx, code.ID)
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func TestRedeemLDCCodeCreditsTieredUSDByUserHistoryWithLinuxDoBinding(t *testing
 	require.Contains(t, *reloaded.Notes, `"code_kind":"ldc"`)
 	require.Contains(t, *reloaded.Notes, `"redeemed_user_id":`)
 	require.Contains(t, *reloaded.Notes, `"ldc_amount":100`)
-	require.Contains(t, *reloaded.Notes, `"credited_usd":7`)
+	require.Contains(t, *reloaded.Notes, `"credited_usd":5.2`)
 }
 
 func TestRedeemLDCCodeRequiresLinuxDoBinding(t *testing.T) {
@@ -329,6 +329,9 @@ type ldcUserRepoStub struct {
 }
 
 func (r *ldcUserRepoStub) Create(context.Context, *User) error { panic("unexpected call") }
+func (r *ldcUserRepoStub) CreateWithEmailAliasGuard(context.Context, *User) error {
+	panic("unexpected call")
+}
 func (r *ldcUserRepoStub) GetByID(context.Context, int64) (*User, error) {
 	if r.user == nil {
 		return &User{}, nil
@@ -343,8 +346,10 @@ func (r *ldcUserRepoStub) GetByEmail(context.Context, string) (*User, error) {
 	panic("unexpected call")
 }
 func (r *ldcUserRepoStub) GetFirstAdmin(context.Context) (*User, error) { panic("unexpected call") }
-func (r *ldcUserRepoStub) Update(context.Context, *User) error          { panic("unexpected call") }
-func (r *ldcUserRepoStub) Delete(context.Context, int64) error          { panic("unexpected call") }
+func (r *ldcUserRepoStub) Update(context.Context, *User, UserUpdateFields) error {
+	panic("unexpected call")
+}
+func (r *ldcUserRepoStub) Delete(context.Context, int64) error { panic("unexpected call") }
 func (r *ldcUserRepoStub) GetUserAvatar(context.Context, int64) (*UserAvatar, error) {
 	panic("unexpected call")
 }
@@ -378,6 +383,12 @@ func (r *ldcUserRepoStub) UpdateBalance(_ context.Context, _ int64, amount float
 func (r *ldcUserRepoStub) DeductBalance(context.Context, int64, float64) error {
 	panic("unexpected call")
 }
+func (r *ldcUserRepoStub) AdjustBalance(context.Context, int64, float64) (BalanceChange, error) {
+	panic("unexpected call")
+}
+func (r *ldcUserRepoStub) SetBalance(context.Context, int64, float64) (BalanceChange, error) {
+	panic("unexpected call")
+}
 func (r *ldcUserRepoStub) UpdateConcurrency(context.Context, int64, int) error {
 	panic("unexpected call")
 }
@@ -391,6 +402,9 @@ func (r *ldcUserRepoStub) BatchUpdateLimits(context.Context, []int64, *int, *int
 	panic("unexpected call")
 }
 func (r *ldcUserRepoStub) ExistsByEmail(context.Context, string) (bool, error) {
+	panic("unexpected call")
+}
+func (r *ldcUserRepoStub) ExistsByEmailAlias(context.Context, string) (bool, error) {
 	panic("unexpected call")
 }
 func (r *ldcUserRepoStub) RemoveGroupFromAllowedGroups(context.Context, int64) (int64, error) {

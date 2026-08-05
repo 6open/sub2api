@@ -47,6 +47,9 @@ func (APIKey) Fields() []ent.Field {
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),
+		field.Bool("is_open_webui_default").
+			Default(false).
+			Comment("Whether this key is used for the owner's Open WebUI requests"),
 		field.Time("last_used_at").
 			Optional().
 			Nillable().

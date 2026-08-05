@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html"
 	"sort"
@@ -23,14 +24,16 @@ import (
 )
 
 var (
-	ErrAPIKeyNotFound       = infraerrors.NotFound("API_KEY_NOT_FOUND", "api key not found")
-	ErrGroupNotAllowed      = infraerrors.Forbidden("GROUP_NOT_ALLOWED", "user is not allowed to bind this group")
-	ErrAPIKeyExists         = infraerrors.Conflict("API_KEY_EXISTS", "api key already exists")
-	ErrAPIKeyTooShort       = infraerrors.BadRequest("API_KEY_TOO_SHORT", "api key must be at least 16 characters")
-	ErrAPIKeyInvalidChars   = infraerrors.BadRequest("API_KEY_INVALID_CHARS", "api key can only contain letters, numbers, underscores, and hyphens")
-	ErrAPIKeyRateLimited    = infraerrors.TooManyRequests("API_KEY_RATE_LIMITED", "too many failed attempts, please try again later")
-	ErrAPIKeyAuthOverloaded = infraerrors.ServiceUnavailable("API_KEY_AUTH_OVERLOADED", "api key authentication is temporarily overloaded")
-	ErrInvalidIPPattern     = infraerrors.BadRequest("INVALID_IP_PATTERN", "invalid IP or CIDR pattern")
+	ErrAPIKeyNotFound              = infraerrors.NotFound("API_KEY_NOT_FOUND", "api key not found")
+	ErrGroupNotAllowed             = infraerrors.Forbidden("GROUP_NOT_ALLOWED", "user is not allowed to bind this group")
+	ErrAPIKeyExists                = infraerrors.Conflict("API_KEY_EXISTS", "api key already exists")
+	ErrAPIKeyTooShort              = infraerrors.BadRequest("API_KEY_TOO_SHORT", "api key must be at least 16 characters")
+	ErrAPIKeyInvalidChars          = infraerrors.BadRequest("API_KEY_INVALID_CHARS", "api key can only contain letters, numbers, underscores, and hyphens")
+	ErrAPIKeyRateLimited           = infraerrors.TooManyRequests("API_KEY_RATE_LIMITED", "too many failed attempts, please try again later")
+	ErrAPIKeyAuthOverloaded        = infraerrors.ServiceUnavailable("API_KEY_AUTH_OVERLOADED", "api key authentication is temporarily overloaded")
+	ErrOpenWebUIDefaultKeyNotFound = infraerrors.NotFound("OPEN_WEBUI_DEFAULT_KEY_NOT_FOUND", "Open WebUI default API key not found")
+	ErrOpenWebUIImageKeyNotFound   = infraerrors.NotFound("OPEN_WEBUI_IMAGE_KEY_NOT_FOUND", "Open WebUI image API key not found")
+	ErrInvalidIPPattern            = infraerrors.BadRequest("INVALID_IP_PATTERN", "invalid IP or CIDR pattern")
 	// ErrAPIKeyExpired        = infraerrors.Forbidden("API_KEY_EXPIRED", "api key has expired")
 	ErrAPIKeyExpired = infraerrors.Forbidden("API_KEY_EXPIRED", "api key 已过期")
 	// ErrAPIKeyQuotaExhausted = infraerrors.TooManyRequests("API_KEY_QUOTA_EXHAUSTED", "api key quota exhausted")
@@ -118,6 +121,12 @@ type APIKeyRepository interface {
 	IncrementRateLimitUsage(ctx context.Context, id int64, cost float64) error
 	ResetRateLimitWindows(ctx context.Context, id int64) error
 	GetRateLimitData(ctx context.Context, id int64) (*APIKeyRateLimitData, error)
+}
+
+type OpenWebUIAPIKeyRepository interface {
+	GetOpenWebUIDefaultKey(ctx context.Context, userID int64) (string, error)
+	GetOpenWebUIImageKey(ctx context.Context, userID, groupID int64) (string, error)
+	SetOpenWebUIDefault(ctx context.Context, userID, apiKeyID int64) error
 }
 
 type apiKeyAllByUserIDLister interface {
@@ -219,9 +228,10 @@ type CreateAPIKeyRequest struct {
 	ExpiresInDays *int    `json:"expires_in_days"` // Days until expiry (nil = never expires)
 
 	// Rate limit fields (0 = unlimited)
-	RateLimit5h float64 `json:"rate_limit_5h"`
-	RateLimit1d float64 `json:"rate_limit_1d"`
-	RateLimit7d float64 `json:"rate_limit_7d"`
+	RateLimit5h      float64 `json:"rate_limit_5h"`
+	RateLimit1d      float64 `json:"rate_limit_1d"`
+	RateLimit7d      float64 `json:"rate_limit_7d"`
+	OpenWebUIDefault bool    `json:"-"`
 }
 
 // UpdateAPIKeyRequest 更新API Key请求
@@ -498,18 +508,19 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 
 	// 创建API Key记录
 	apiKey := &APIKey{
-		UserID:      userID,
-		Key:         key,
-		Name:        html.EscapeString(req.Name),
-		GroupID:     req.GroupID,
-		Status:      StatusActive,
-		IPWhitelist: req.IPWhitelist,
-		IPBlacklist: req.IPBlacklist,
-		Quota:       req.Quota,
-		QuotaUsed:   0,
-		RateLimit5h: req.RateLimit5h,
-		RateLimit1d: req.RateLimit1d,
-		RateLimit7d: req.RateLimit7d,
+		UserID:             userID,
+		Key:                key,
+		Name:               html.EscapeString(req.Name),
+		GroupID:            req.GroupID,
+		Status:             StatusActive,
+		IsOpenWebUIDefault: req.OpenWebUIDefault,
+		IPWhitelist:        req.IPWhitelist,
+		IPBlacklist:        req.IPBlacklist,
+		Quota:              req.Quota,
+		QuotaUsed:          0,
+		RateLimit5h:        req.RateLimit5h,
+		RateLimit1d:        req.RateLimit1d,
+		RateLimit7d:        req.RateLimit7d,
 	}
 
 	// Set expiration time if specified
@@ -526,6 +537,105 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	s.compileAPIKeyIPRules(apiKey)
 
 	return apiKey, nil
+}
+
+// ResolveOpenWebUIAPIKey returns the key selected by the signed Open WebUI
+// user. The first request creates a dedicated key for that user.
+func (s *APIKeyService) ResolveOpenWebUIAPIKey(ctx context.Context, email string, defaultGroupID int64) (*APIKey, error) {
+	openWebUIRepo, ok := s.apiKeyRepo.(OpenWebUIAPIKeyRepository)
+	if !ok {
+		return nil, errors.New("API key repository does not support Open WebUI delegation")
+	}
+	user, err := s.userRepo.GetByEmail(ctx, strings.TrimSpace(email))
+	if err != nil {
+		return nil, fmt.Errorf("get Open WebUI user: %w", err)
+	}
+
+	credential, err := openWebUIRepo.GetOpenWebUIDefaultKey(ctx, user.ID)
+	if err == nil {
+		return s.GetByKey(ctx, credential)
+	}
+	if !errors.Is(err, ErrOpenWebUIDefaultKeyNotFound) {
+		return nil, fmt.Errorf("get Open WebUI default key: %w", err)
+	}
+
+	var groupID *int64
+	if defaultGroupID > 0 {
+		groupID = &defaultGroupID
+	}
+	created, createErr := s.Create(ctx, user.ID, CreateAPIKeyRequest{
+		Name:             "Open WebUI",
+		GroupID:          groupID,
+		OpenWebUIDefault: true,
+	})
+	if createErr == nil {
+		return s.GetByKey(ctx, created.Key)
+	}
+
+	// Concurrent first requests can race on the per-user partial unique index.
+	// The winner's key is the canonical result.
+	if errors.Is(createErr, ErrAPIKeyExists) {
+		credential, err = openWebUIRepo.GetOpenWebUIDefaultKey(ctx, user.ID)
+		if err == nil {
+			return s.GetByKey(ctx, credential)
+		}
+	}
+	return nil, fmt.Errorf("create Open WebUI default key: %w", createErr)
+}
+
+// ResolveOpenWebUIImageAPIKey returns the dedicated image key for an Open
+// WebUI user. Image groups are often isolated from text-model groups.
+func (s *APIKeyService) ResolveOpenWebUIImageAPIKey(ctx context.Context, email string, imageGroupID int64) (*APIKey, error) {
+	openWebUIRepo, ok := s.apiKeyRepo.(OpenWebUIAPIKeyRepository)
+	if !ok {
+		return nil, errors.New("API key repository does not support Open WebUI delegation")
+	}
+	user, err := s.userRepo.GetByEmail(ctx, strings.TrimSpace(email))
+	if err != nil {
+		return nil, fmt.Errorf("get Open WebUI user: %w", err)
+	}
+
+	credential, err := openWebUIRepo.GetOpenWebUIImageKey(ctx, user.ID, imageGroupID)
+	if err == nil {
+		return s.GetByKey(ctx, credential)
+	}
+	if !errors.Is(err, ErrOpenWebUIImageKeyNotFound) {
+		return nil, fmt.Errorf("get Open WebUI image key: %w", err)
+	}
+
+	created, createErr := s.Create(ctx, user.ID, CreateAPIKeyRequest{
+		Name:    "Open WebUI Image",
+		GroupID: &imageGroupID,
+	})
+	if createErr == nil {
+		return s.GetByKey(ctx, created.Key)
+	}
+
+	// A concurrent first image request may win the unique-index race.
+	credential, err = openWebUIRepo.GetOpenWebUIImageKey(ctx, user.ID, imageGroupID)
+	if err == nil {
+		return s.GetByKey(ctx, credential)
+	}
+	return nil, fmt.Errorf("create Open WebUI image key: %w", createErr)
+}
+
+// SetOpenWebUIDefault changes which of the user's keys Open WebUI bills.
+func (s *APIKeyService) SetOpenWebUIDefault(ctx context.Context, userID, apiKeyID int64) (*APIKey, error) {
+	openWebUIRepo, ok := s.apiKeyRepo.(OpenWebUIAPIKeyRepository)
+	if !ok {
+		return nil, errors.New("API key repository does not support Open WebUI delegation")
+	}
+	apiKey, err := s.apiKeyRepo.GetByID(ctx, apiKeyID)
+	if err != nil {
+		return nil, fmt.Errorf("get api key: %w", err)
+	}
+	if apiKey.UserID != userID {
+		return nil, ErrInsufficientPerms
+	}
+	if err := openWebUIRepo.SetOpenWebUIDefault(ctx, userID, apiKeyID); err != nil {
+		return nil, fmt.Errorf("set Open WebUI default key: %w", err)
+	}
+	return s.GetByID(ctx, apiKeyID)
 }
 
 // List 获取用户的API Key列表

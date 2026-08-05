@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -24,26 +25,28 @@ import (
 )
 
 var (
-	ErrInvalidCredentials      = infraerrors.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
-	ErrUserNotActive           = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
-	ErrEmailExists             = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
-	ErrEmailReserved           = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
-	ErrInvalidToken            = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
-	ErrTokenExpired            = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")
-	ErrAccessTokenExpired      = infraerrors.Unauthorized("ACCESS_TOKEN_EXPIRED", "access token has expired")
-	ErrTokenTooLarge           = infraerrors.BadRequest("TOKEN_TOO_LARGE", "token too large")
-	ErrTokenRevoked            = infraerrors.Unauthorized("TOKEN_REVOKED", "token has been revoked")
-	ErrRefreshTokenInvalid     = infraerrors.Unauthorized("REFRESH_TOKEN_INVALID", "invalid refresh token")
-	ErrRefreshTokenExpired     = infraerrors.Unauthorized("REFRESH_TOKEN_EXPIRED", "refresh token has expired")
-	ErrRefreshTokenReused      = infraerrors.Unauthorized("REFRESH_TOKEN_REUSED", "refresh token has been reused")
-	ErrEmailVerifyRequired     = infraerrors.BadRequest("EMAIL_VERIFY_REQUIRED", "email verification is required")
-	ErrEmailSuffixNotAllowed   = infraerrors.BadRequest("EMAIL_SUFFIX_NOT_ALLOWED", "email suffix is not allowed")
-	ErrRegDisabled             = infraerrors.Forbidden("REGISTRATION_DISABLED", "registration is currently disabled")
-	ErrServiceUnavailable      = infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "service temporarily unavailable")
-	ErrInvitationCodeRequired  = infraerrors.BadRequest("INVITATION_CODE_REQUIRED", "invitation code is required")
-	ErrInvitationCodeInvalid   = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
-	ErrOAuthInvitationRequired = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
-	ErrCaptchaProviderConflict = infraerrors.ServiceUnavailable("CAPTCHA_PROVIDER_CONFLICT", "multiple captcha providers are enabled")
+	ErrInvalidCredentials        = infraerrors.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
+	ErrUserNotActive             = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
+	ErrEmailExists               = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
+	ErrEmailReserved             = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
+	ErrEmailSubaddressNotAllowed = infraerrors.BadRequest("EMAIL_SUBADDRESS_NOT_ALLOWED", "email plus-address tags are not allowed for registration")
+	ErrInvalidToken              = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
+	ErrTokenExpired              = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")
+	ErrAccessTokenExpired        = infraerrors.Unauthorized("ACCESS_TOKEN_EXPIRED", "access token has expired")
+	ErrTokenTooLarge             = infraerrors.BadRequest("TOKEN_TOO_LARGE", "token too large")
+	ErrTokenRevoked              = infraerrors.Unauthorized("TOKEN_REVOKED", "token has been revoked")
+	ErrRefreshTokenInvalid       = infraerrors.Unauthorized("REFRESH_TOKEN_INVALID", "invalid refresh token")
+	ErrRefreshTokenExpired       = infraerrors.Unauthorized("REFRESH_TOKEN_EXPIRED", "refresh token has expired")
+	ErrRefreshTokenReused        = infraerrors.Unauthorized("REFRESH_TOKEN_REUSED", "refresh token has been reused")
+	ErrEmailVerifyRequired       = infraerrors.BadRequest("EMAIL_VERIFY_REQUIRED", "email verification is required")
+	ErrEmailSuffixNotAllowed     = infraerrors.BadRequest("EMAIL_SUFFIX_NOT_ALLOWED", "email suffix is not allowed")
+	ErrRegDisabled               = infraerrors.Forbidden("REGISTRATION_DISABLED", "registration is currently disabled")
+	ErrServiceUnavailable        = infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "service temporarily unavailable")
+	ErrInvitationCodeRequired    = infraerrors.BadRequest("INVITATION_CODE_REQUIRED", "invitation code is required")
+	ErrInvitationCodeInvalid     = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
+	ErrOAuthInvitationRequired   = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
+	ErrRegistrationRateLimited   = infraerrors.TooManyRequests("REGISTRATION_RATE_LIMITED", "too many registration attempts, please try again later")
+	ErrCaptchaProviderConflict   = infraerrors.ServiceUnavailable("CAPTCHA_PROVIDER_CONFLICT", "multiple captcha providers are enabled")
 )
 
 // maxTokenLength 限制 token 大小，避免超长 header 触发解析时的异常内存分配。
@@ -169,6 +172,10 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
 		return "", nil, err
 	}
+	if blocked, reason := s.isSignupRiskBlocked(ctx, email); blocked {
+		logger.LegacyPrintf("service.auth", "[Auth] Blocking suspected bulk registration: reason=%s", reason)
+		return "", nil, ErrRegistrationRateLimited
+	}
 
 	// 检查是否需要邀请码
 	var invitationRedeemCode *RedeemCode
@@ -240,8 +247,8 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		Concurrency:  grantPlan.Concurrency,
 		RPMLimit:     defaultRPMLimit,
 		Status:       StatusActive,
+		SignupIP:     signupIPFromContext(ctx),
 	}
-
 	if err := s.userRepo.CreateWithEmailAliasGuard(ctx, user); err != nil {
 		// 优先检查邮箱冲突错误（竞态条件下可能发生）
 		if errors.Is(err, ErrEmailExists) {
@@ -298,6 +305,152 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	return token, user, nil
 }
 
+const bulkSignupLookback = 24 * time.Hour
+const generatedMicrosoftSignupBurstThreshold = 3
+
+type signupAuditObservation struct {
+	IP        string
+	UserAgent string
+}
+
+// isSignupRiskBlocked is deliberately fail-open: risk telemetry must
+// never turn a database issue into a registration outage.
+func (s *AuthService) isSignupRiskBlocked(ctx context.Context, email string) (bool, string) {
+	binding := SessionBindingFromContext(ctx)
+	if s == nil || s.entClient == nil || binding == nil || !looksLikeGeneratedMicrosoftEmail(email) {
+		return false, ""
+	}
+	cutoff := time.Now().UTC().Add(-bulkSignupLookback)
+
+	recentEmailRows, err := s.entClient.QueryContext(ctx, `
+		SELECT email
+		FROM users
+		WHERE created_at >= $1
+		  AND deleted_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT 500`, cutoff)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to inspect recent signup emails: %v (continuing with fingerprint checks)", err)
+	} else {
+		generatedCount := 0
+		for recentEmailRows.Next() {
+			var recentEmail string
+			if scanErr := recentEmailRows.Scan(&recentEmail); scanErr != nil {
+				logger.LegacyPrintf("service.auth", "[Auth] Failed to scan recent signup email: %v (continuing with fingerprint checks)", scanErr)
+				break
+			}
+			if looksLikeGeneratedMicrosoftEmail(recentEmail) {
+				generatedCount++
+			}
+		}
+		_ = recentEmailRows.Close()
+		if generatedCount >= generatedMicrosoftSignupBurstThreshold {
+			return true, "generated_microsoft_email_signup_burst"
+		}
+	}
+
+	rows, err := s.entClient.QueryContext(ctx, `
+		SELECT client_ip, user_agent
+		FROM audit_logs
+		WHERE action = $1
+		  AND status_code BETWEEN 200 AND 299
+		  AND created_at >= $2
+		ORDER BY created_at DESC
+		LIMIT 500`, "auth.register", cutoff)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to inspect signup risk telemetry: %v (fail-open)", err)
+		return false, ""
+	}
+	defer func() { _ = rows.Close() }()
+
+	observations := make([]signupAuditObservation, 0, 16)
+	for rows.Next() {
+		var observation signupAuditObservation
+		if err := rows.Scan(&observation.IP, &observation.UserAgent); err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to scan signup risk telemetry: %v (fail-open)", err)
+			return false, ""
+		}
+		observations = append(observations, observation)
+	}
+	if err := rows.Err(); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to read signup risk telemetry: %v (fail-open)", err)
+		return false, ""
+	}
+
+	if isSuspectedBulkSignup(email, binding.IP, binding.UserAgent, observations) {
+		return true, "generated_microsoft_email_with_repeated_subnet_fingerprint"
+	}
+	return false, ""
+}
+
+func looksLikeGeneratedMicrosoftEmail(email string) bool {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(email)), "@")
+	if len(parts) != 2 {
+		return false
+	}
+	switch parts[1] {
+	case "outlook.com", "hotmail.com", "live.com":
+	default:
+		return false
+	}
+
+	local := parts[0]
+	digitStart := len(local)
+	for digitStart > 0 && local[digitStart-1] >= '0' && local[digitStart-1] <= '9' {
+		digitStart--
+	}
+	if len(local)-digitStart < 2 || digitStart < 5 {
+		return false
+	}
+	for i := 0; i < digitStart; i++ {
+		if local[i] < 'a' || local[i] > 'z' {
+			return false
+		}
+	}
+	return true
+}
+
+func isSuspectedBulkSignup(email, currentIP, currentUserAgent string, observations []signupAuditObservation) bool {
+	if !looksLikeGeneratedMicrosoftEmail(email) {
+		return false
+	}
+	currentNetwork, ok := signupNetwork(currentIP)
+	if !ok || strings.TrimSpace(currentUserAgent) == "" {
+		return false
+	}
+
+	sameNetwork := 0
+	sameFingerprint := 0
+	sameUserAgent := 0
+	for _, observation := range observations {
+		if strings.TrimSpace(observation.UserAgent) == strings.TrimSpace(currentUserAgent) {
+			sameUserAgent++
+		}
+		network, valid := signupNetwork(observation.IP)
+		if !valid || network != currentNetwork {
+			continue
+		}
+		sameNetwork++
+		if strings.TrimSpace(observation.UserAgent) == strings.TrimSpace(currentUserAgent) {
+			sameFingerprint++
+		}
+	}
+	return (sameNetwork >= 2 && sameFingerprint >= 1) || sameUserAgent >= 2
+}
+
+func signupNetwork(value string) (netip.Prefix, bool) {
+	addr, err := netip.ParseAddr(strings.TrimSpace(value))
+	if err != nil {
+		return netip.Prefix{}, false
+	}
+	addr = addr.Unmap()
+	bits := 64
+	if addr.Is4() {
+		bits = 24
+	}
+	return netip.PrefixFrom(addr, bits).Masked(), true
+}
+
 // SendVerifyCodeResult 发送验证码返回结果
 type SendVerifyCodeResult struct {
 	Countdown int `json:"countdown"` // 倒计时秒数
@@ -315,6 +468,10 @@ func (s *AuthService) SendVerifyCode(ctx context.Context, email string, locale .
 	}
 	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
 		return err
+	}
+	if blocked, reason := s.isSignupRiskBlocked(ctx, email); blocked {
+		logger.LegacyPrintf("service.auth", "[Auth] Blocking suspected bulk verification request: reason=%s", reason)
+		return ErrRegistrationRateLimited
 	}
 
 	// 检查邮箱是否已存在（含 +别名 / Gmail 点号变体归一化，防止单个收件箱批量派生注册）
@@ -356,6 +513,10 @@ func (s *AuthService) SendVerifyCodeAsync(ctx context.Context, email string, loc
 	}
 	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
 		return nil, err
+	}
+	if blocked, reason := s.isSignupRiskBlocked(ctx, email); blocked {
+		logger.LegacyPrintf("service.auth", "[Auth] Blocking suspected bulk verification request: reason=%s", reason)
+		return nil, ErrRegistrationRateLimited
 	}
 
 	// 检查邮箱是否已存在（含 +别名 / Gmail 点号变体归一化；在发信前拦截，避免批量脚本消耗发信配额）
@@ -619,6 +780,7 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 				RPMLimit:     defaultRPMLimit,
 				Status:       StatusActive,
 				SignupSource: signupSource,
+				SignupIP:     signupIPFromContext(ctx),
 			}
 
 			if err := s.userRepo.Create(ctx, newUser); err != nil {
@@ -771,6 +933,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				RPMLimit:     defaultRPMLimit,
 				Status:       StatusActive,
 				SignupSource: signupSource,
+				SignupIP:     signupIPFromContext(ctx),
 			}
 
 			if s.entClient != nil && invitationRedeemCode != nil {
@@ -1203,6 +1366,9 @@ func inferLegacySignupSource(email string) string {
 }
 
 func (s *AuthService) validateRegistrationEmailPolicy(ctx context.Context, email string) error {
+	if HasRegistrationEmailSubaddressTag(email) {
+		return ErrEmailSubaddressNotAllowed
+	}
 	if s.settingService == nil {
 		return nil
 	}

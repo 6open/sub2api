@@ -113,6 +113,20 @@ func (_c *APIKeyCreate) SetNillableStatus(v *string) *APIKeyCreate {
 	return _c
 }
 
+// SetIsOpenWebuiDefault sets the "is_open_webui_default" field.
+func (_c *APIKeyCreate) SetIsOpenWebuiDefault(v bool) *APIKeyCreate {
+	_c.mutation.SetIsOpenWebuiDefault(v)
+	return _c
+}
+
+// SetNillableIsOpenWebuiDefault sets the "is_open_webui_default" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableIsOpenWebuiDefault(v *bool) *APIKeyCreate {
+	if v != nil {
+		_c.SetIsOpenWebuiDefault(*v)
+	}
+	return _c
+}
+
 // SetLastUsedAt sets the "last_used_at" field.
 func (_c *APIKeyCreate) SetLastUsedAt(v time.Time) *APIKeyCreate {
 	_c.mutation.SetLastUsedAt(v)
@@ -387,6 +401,10 @@ func (_c *APIKeyCreate) defaults() error {
 		v := apikey.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
+	if _, ok := _c.mutation.IsOpenWebuiDefault(); !ok {
+		v := apikey.DefaultIsOpenWebuiDefault
+		_c.mutation.SetIsOpenWebuiDefault(v)
+	}
 	if _, ok := _c.mutation.Quota(); !ok {
 		v := apikey.DefaultQuota
 		_c.mutation.SetQuota(v)
@@ -456,6 +474,9 @@ func (_c *APIKeyCreate) check() error {
 		if err := apikey.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.IsOpenWebuiDefault(); !ok {
+		return &ValidationError{Name: "is_open_webui_default", err: errors.New(`ent: missing required field "APIKey.is_open_webui_default"`)}
 	}
 	if _, ok := _c.mutation.Quota(); !ok {
 		return &ValidationError{Name: "quota", err: errors.New(`ent: missing required field "APIKey.quota"`)}
@@ -534,6 +555,10 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
 		_node.Status = value
+	}
+	if value, ok := _c.mutation.IsOpenWebuiDefault(); ok {
+		_spec.SetField(apikey.FieldIsOpenWebuiDefault, field.TypeBool, value)
+		_node.IsOpenWebuiDefault = value
 	}
 	if value, ok := _c.mutation.LastUsedAt(); ok {
 		_spec.SetField(apikey.FieldLastUsedAt, field.TypeTime, value)
@@ -790,6 +815,18 @@ func (u *APIKeyUpsert) SetStatus(v string) *APIKeyUpsert {
 // UpdateStatus sets the "status" field to the value that was provided on create.
 func (u *APIKeyUpsert) UpdateStatus() *APIKeyUpsert {
 	u.SetExcluded(apikey.FieldStatus)
+	return u
+}
+
+// SetIsOpenWebuiDefault sets the "is_open_webui_default" field.
+func (u *APIKeyUpsert) SetIsOpenWebuiDefault(v bool) *APIKeyUpsert {
+	u.Set(apikey.FieldIsOpenWebuiDefault, v)
+	return u
+}
+
+// UpdateIsOpenWebuiDefault sets the "is_open_webui_default" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateIsOpenWebuiDefault() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldIsOpenWebuiDefault)
 	return u
 }
 
@@ -1217,6 +1254,20 @@ func (u *APIKeyUpsertOne) SetStatus(v string) *APIKeyUpsertOne {
 func (u *APIKeyUpsertOne) UpdateStatus() *APIKeyUpsertOne {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.UpdateStatus()
+	})
+}
+
+// SetIsOpenWebuiDefault sets the "is_open_webui_default" field.
+func (u *APIKeyUpsertOne) SetIsOpenWebuiDefault(v bool) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetIsOpenWebuiDefault(v)
+	})
+}
+
+// UpdateIsOpenWebuiDefault sets the "is_open_webui_default" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateIsOpenWebuiDefault() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateIsOpenWebuiDefault()
 	})
 }
 
@@ -1855,6 +1906,20 @@ func (u *APIKeyUpsertBulk) SetStatus(v string) *APIKeyUpsertBulk {
 func (u *APIKeyUpsertBulk) UpdateStatus() *APIKeyUpsertBulk {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.UpdateStatus()
+	})
+}
+
+// SetIsOpenWebuiDefault sets the "is_open_webui_default" field.
+func (u *APIKeyUpsertBulk) SetIsOpenWebuiDefault(v bool) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetIsOpenWebuiDefault(v)
+	})
+}
+
+// UpdateIsOpenWebuiDefault sets the "is_open_webui_default" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateIsOpenWebuiDefault() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateIsOpenWebuiDefault()
 	})
 }
 

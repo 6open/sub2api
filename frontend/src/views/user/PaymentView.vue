@@ -41,61 +41,6 @@
               <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
               <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
             </div>
-            <div class="rounded-3xl border border-sky-200 bg-gradient-to-r from-sky-50 via-white to-indigo-50 p-5 shadow-sm dark:border-sky-800/60 dark:from-sky-950/30 dark:via-dark-800 dark:to-indigo-950/20">
-              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p class="text-base font-bold text-gray-950 dark:text-white">link-lable交流群</p>
-                  <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">点击链接加入群聊，获取充值、兑换和使用帮助。</p>
-                </div>
-                <a
-                  class="btn btn-secondary inline-flex shrink-0 items-center justify-center rounded-2xl px-4 py-2"
-                  href="https://qm.qq.com/q/dqWgFGYbD2"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  点击链接加入群聊
-                </a>
-              </div>
-            </div>
-            <div class="grid gap-4 lg:grid-cols-2">
-              <div class="relative min-h-[210px] overflow-hidden rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-6 shadow-sm dark:border-emerald-800/60 dark:from-emerald-950/30 dark:via-dark-800 dark:to-cyan-950/20">
-                <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-300/20 blur-2xl"></div>
-                <div class="relative flex h-full flex-col justify-between gap-5 sm:flex-row sm:items-center">
-                  <div>
-                    <div class="mb-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200">LinuxDO 积分购买</div>
-                    <p class="text-2xl font-extrabold tracking-tight text-gray-950 dark:text-white">前 10刀额度享特惠</p>
-                    <p class="mt-2 text-base font-semibold text-emerald-700 dark:text-emerald-300">10 LDC = 1刀</p>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">超出后按 20 LDC = 1刀</p>
-                  </div>
-                  <button
-                    type="button"
-                    class="btn inline-flex shrink-0 items-center justify-center rounded-2xl px-5 py-3 text-base font-semibold shadow-lg shadow-emerald-500/20"
-                    @click="handleLinuxDoShopPurchase"
-                  >
-                    立即购买
-                  </button>
-                </div>
-              </div>
-              <div class="relative min-h-[210px] overflow-hidden rounded-3xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-rose-50 p-6 shadow-sm dark:border-orange-800/60 dark:from-orange-950/30 dark:via-dark-800 dark:to-rose-950/20">
-                <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-orange-300/20 blur-2xl"></div>
-                <div class="relative flex h-full flex-col justify-between gap-5 sm:flex-row sm:items-center">
-                  <div>
-                    <div class="mb-3 inline-flex rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700 dark:bg-orange-900/50 dark:text-orange-200">闲鱼客服购买</div>
-                    <p class="text-2xl font-extrabold tracking-tight text-gray-950 dark:text-white">闲鱼购买额度</p>
-                    <p class="mt-2 text-base font-semibold text-orange-700 dark:text-orange-300">支持多档额度</p>
-                    <p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">支持 1刀 / 5刀 / 10刀 等额度购买或续费。</p>
-                  </div>
-                  <a
-                    class="inline-flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-base font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:from-orange-600 hover:to-rose-600"
-                    href="https://m.tb.cn/h.8bWmQVo?tk=VCKygIjCm4N"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    前往闲鱼购买
-                  </a>
-                </div>
-              </div>
-            </div>
             <div v-if="enabledMethods.length === 0" class="card py-16 text-center">
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
@@ -103,7 +48,8 @@
             <div class="card p-6">
               <AmountInput
                 v-model="amount"
-                :amounts="[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]"
+                :amounts="[1, 10, 100]"
+                :currency-symbol="selectedCurrencySymbol"
                 :min="globalMinAmount"
                 :max="globalMaxAmount"
               />
@@ -147,6 +93,44 @@
               <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(totalAmount) }}</span>
             </button>
             </template>
+
+            <section class="card overflow-hidden">
+              <div class="card-header">
+                <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-200">其他购买方式</h2>
+              </div>
+              <div class="grid divide-y divide-gray-100 dark:divide-dark-700 lg:grid-cols-3 lg:divide-x lg:divide-y-0">
+                <div class="flex items-center gap-3 p-4">
+                  <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300">
+                    <Icon name="chat" size="sm" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-white">Link-Label 交流群</h3>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">充值与使用帮助</p>
+                  </div>
+                  <a class="btn btn-secondary btn-sm shrink-0" href="https://qm.qq.com/q/dqWgFGYbD2" target="_blank" rel="noopener noreferrer">加入</a>
+                </div>
+                <div class="flex items-center gap-3 p-4">
+                  <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300">
+                    <Icon name="dollar" size="sm" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-white">LinuxDO 积分购买</h3>
+                    <p class="mt-0.5 text-xs leading-5 text-gray-500 dark:text-gray-400">前 10刀额度享特惠：10 LDC = 1刀<br>超出后按 50 LDC = 1刀</p>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-sm shrink-0" @click="handleLinuxDoShopPurchase">购买</button>
+                </div>
+                <div class="flex items-center gap-3 p-4">
+                  <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600 dark:bg-orange-950/60 dark:text-orange-300">
+                    <Icon name="externalLink" size="sm" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-white">闲鱼购买额度</h3>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">支持 1刀 / 5刀 / 10刀</p>
+                  </div>
+                  <a class="btn btn-secondary btn-sm shrink-0" href="https://m.tb.cn/h.8ci78UP?tk=LUDdgttOFxf" target="_blank" rel="noopener noreferrer">购买</a>
+                </div>
+              </div>
+            </section>
           </template>
           <!-- Subscribe Tab -->
           <template v-else-if="activeTab === 'subscription'">
@@ -623,6 +607,17 @@ const localeCode = computed(() => {
     return String((raw as { value?: string }).value || '')
   }
   return undefined
+})
+const selectedCurrencySymbol = computed(() => {
+  try {
+    return new Intl.NumberFormat(localeCode.value, {
+      style: 'currency',
+      currency: selectedCurrency.value,
+      currencyDisplay: 'narrowSymbol',
+    }).formatToParts(0).find(part => part.type === 'currency')?.value || selectedCurrency.value
+  } catch {
+    return selectedCurrency.value
+  }
 })
 
 function currencyFractionDigits(currency: string): number {

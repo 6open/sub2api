@@ -46,6 +46,7 @@ describe('PaymentMethodSelector', () => {
     expect(wrapper.text()).toContain('LDC Pay')
     expect(wrapper.text()).not.toContain('ldc')
     expect(wrapper.text()).not.toContain('payment.methods.ldc')
+    expect(wrapper.get('div.grid').classes()).toContain('grid-cols-1')
   })
 
   it('uses the generic selected style for custom methods that contain built-in names', () => {

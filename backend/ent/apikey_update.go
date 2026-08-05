@@ -134,6 +134,20 @@ func (_u *APIKeyUpdate) SetNillableStatus(v *string) *APIKeyUpdate {
 	return _u
 }
 
+// SetIsOpenWebuiDefault sets the "is_open_webui_default" field.
+func (_u *APIKeyUpdate) SetIsOpenWebuiDefault(v bool) *APIKeyUpdate {
+	_u.mutation.SetIsOpenWebuiDefault(v)
+	return _u
+}
+
+// SetNillableIsOpenWebuiDefault sets the "is_open_webui_default" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableIsOpenWebuiDefault(v *bool) *APIKeyUpdate {
+	if v != nil {
+		_u.SetIsOpenWebuiDefault(*v)
+	}
+	return _u
+}
+
 // SetLastUsedAt sets the "last_used_at" field.
 func (_u *APIKeyUpdate) SetLastUsedAt(v time.Time) *APIKeyUpdate {
 	_u.mutation.SetLastUsedAt(v)
@@ -596,6 +610,9 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.IsOpenWebuiDefault(); ok {
+		_spec.SetField(apikey.FieldIsOpenWebuiDefault, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.LastUsedAt(); ok {
 		_spec.SetField(apikey.FieldLastUsedAt, field.TypeTime, value)
 	}
@@ -917,6 +934,20 @@ func (_u *APIKeyUpdateOne) SetStatus(v string) *APIKeyUpdateOne {
 func (_u *APIKeyUpdateOne) SetNillableStatus(v *string) *APIKeyUpdateOne {
 	if v != nil {
 		_u.SetStatus(*v)
+	}
+	return _u
+}
+
+// SetIsOpenWebuiDefault sets the "is_open_webui_default" field.
+func (_u *APIKeyUpdateOne) SetIsOpenWebuiDefault(v bool) *APIKeyUpdateOne {
+	_u.mutation.SetIsOpenWebuiDefault(v)
+	return _u
+}
+
+// SetNillableIsOpenWebuiDefault sets the "is_open_webui_default" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableIsOpenWebuiDefault(v *bool) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetIsOpenWebuiDefault(*v)
 	}
 	return _u
 }
@@ -1412,6 +1443,9 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.IsOpenWebuiDefault(); ok {
+		_spec.SetField(apikey.FieldIsOpenWebuiDefault, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.LastUsedAt(); ok {
 		_spec.SetField(apikey.FieldLastUsedAt, field.TypeTime, value)

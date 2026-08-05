@@ -242,6 +242,20 @@ func (_c *UserCreate) SetNillableSignupSource(v *string) *UserCreate {
 	return _c
 }
 
+// SetSignupIP sets the "signup_ip" field.
+func (_c *UserCreate) SetSignupIP(v string) *UserCreate {
+	_c.mutation.SetSignupIP(v)
+	return _c
+}
+
+// SetNillableSignupIP sets the "signup_ip" field if the given value is not nil.
+func (_c *UserCreate) SetNillableSignupIP(v *string) *UserCreate {
+	if v != nil {
+		_c.SetSignupIP(*v)
+	}
+	return _c
+}
+
 // SetLastLoginAt sets the "last_login_at" field.
 func (_c *UserCreate) SetLastLoginAt(v time.Time) *UserCreate {
 	_c.mutation.SetLastLoginAt(v)
@@ -636,6 +650,10 @@ func (_c *UserCreate) defaults() error {
 		v := user.DefaultSignupSource
 		_c.mutation.SetSignupSource(v)
 	}
+	if _, ok := _c.mutation.SignupIP(); !ok {
+		v := user.DefaultSignupIP
+		_c.mutation.SetSignupIP(v)
+	}
 	if _, ok := _c.mutation.BalanceNotifyEnabled(); !ok {
 		v := user.DefaultBalanceNotifyEnabled
 		_c.mutation.SetBalanceNotifyEnabled(v)
@@ -728,6 +746,14 @@ func (_c *UserCreate) check() error {
 	if v, ok := _c.mutation.SignupSource(); ok {
 		if err := user.SignupSourceValidator(v); err != nil {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.SignupIP(); !ok {
+		return &ValidationError{Name: "signup_ip", err: errors.New(`ent: missing required field "User.signup_ip"`)}
+	}
+	if v, ok := _c.mutation.SignupIP(); ok {
+		if err := user.SignupIPValidator(v); err != nil {
+			return &ValidationError{Name: "signup_ip", err: fmt.Errorf(`ent: validator failed for field "User.signup_ip": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.BalanceNotifyEnabled(); !ok {
@@ -835,6 +861,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.SignupSource(); ok {
 		_spec.SetField(user.FieldSignupSource, field.TypeString, value)
 		_node.SignupSource = value
+	}
+	if value, ok := _c.mutation.SignupIP(); ok {
+		_spec.SetField(user.FieldSignupIP, field.TypeString, value)
+		_node.SignupIP = value
 	}
 	if value, ok := _c.mutation.LastLoginAt(); ok {
 		_spec.SetField(user.FieldLastLoginAt, field.TypeTime, value)
@@ -1348,6 +1378,18 @@ func (u *UserUpsert) UpdateSignupSource() *UserUpsert {
 	return u
 }
 
+// SetSignupIP sets the "signup_ip" field.
+func (u *UserUpsert) SetSignupIP(v string) *UserUpsert {
+	u.Set(user.FieldSignupIP, v)
+	return u
+}
+
+// UpdateSignupIP sets the "signup_ip" field to the value that was provided on create.
+func (u *UserUpsert) UpdateSignupIP() *UserUpsert {
+	u.SetExcluded(user.FieldSignupIP)
+	return u
+}
+
 // SetLastLoginAt sets the "last_login_at" field.
 func (u *UserUpsert) SetLastLoginAt(v time.Time) *UserUpsert {
 	u.Set(user.FieldLastLoginAt, v)
@@ -1774,6 +1816,20 @@ func (u *UserUpsertOne) SetSignupSource(v string) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateSignupSource() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateSignupSource()
+	})
+}
+
+// SetSignupIP sets the "signup_ip" field.
+func (u *UserUpsertOne) SetSignupIP(v string) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetSignupIP(v)
+	})
+}
+
+// UpdateSignupIP sets the "signup_ip" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateSignupIP() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateSignupIP()
 	})
 }
 
@@ -2391,6 +2447,20 @@ func (u *UserUpsertBulk) SetSignupSource(v string) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateSignupSource() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateSignupSource()
+	})
+}
+
+// SetSignupIP sets the "signup_ip" field.
+func (u *UserUpsertBulk) SetSignupIP(v string) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetSignupIP(v)
+	})
+}
+
+// UpdateSignupIP sets the "signup_ip" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateSignupIP() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateSignupIP()
 	})
 }
 
