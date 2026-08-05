@@ -262,9 +262,12 @@ func TestFlattenOpenAIResponsesNamespacesRewritesKnownAndStripsResidualInputName
 
 	var decoded map[string]any
 	require.NoError(t, json.Unmarshal(got, &decoded))
-	input := decoded["input"].([]any)
-	first := input[0].(map[string]any)
-	second := input[1].(map[string]any)
+	input, ok := decoded["input"].([]any)
+	require.True(t, ok)
+	first, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	second, ok := input[1].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, "team__send", first["name"])
 	require.Equal(t, "other", second["name"])
 }

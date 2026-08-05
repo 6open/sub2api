@@ -18,7 +18,6 @@ import (
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -94,7 +93,7 @@ func (h *AuthHandler) StartOpenWebUIHandoff(c *gin.Context) {
 
 // VerifyOpenWebUIHandoff validates and atomically consumes a handoff. The
 // endpoint is called server-to-server by the Open WebUI auth bridge.
-func (h *AuthHandler) VerifyOpenWebUIHandoff(redisClient *redis.Client) gin.HandlerFunc {
+func (h *AuthHandler) VerifyOpenWebUIHandoff(consume func(context.Context, string, time.Duration) (bool, error)) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !validOpenWebUIVerifySecret(c.GetHeader(openWebUIHandoffSecretHeader), os.Getenv("OPEN_WEBUI_SSO_VERIFY_SECRET")) {
 			response.ErrorFrom(c, infraerrors.Unauthorized("OPEN_WEBUI_SSO_UNAUTHORIZED", "invalid SSO verifier credentials"))
@@ -113,7 +112,7 @@ func (h *AuthHandler) VerifyOpenWebUIHandoff(redisClient *redis.Client) gin.Hand
 			return
 		}
 
-		consumed, err := consumeOpenWebUIHandoff(c.Request.Context(), redisClient, payload)
+		consumed, err := consumeOpenWebUIHandoff(c.Request.Context(), consume, payload)
 		if err != nil {
 			response.ErrorFrom(c, infraerrors.ServiceUnavailable("OPEN_WEBUI_SSO_STORE_UNAVAILABLE", "handoff store is unavailable").WithCause(err))
 			return
@@ -215,13 +214,13 @@ func validOpenWebUIVerifySecret(provided, expected string) bool {
 	return provided != "" && expected != "" && hmac.Equal([]byte(provided), []byte(expected))
 }
 
-func consumeOpenWebUIHandoff(ctx context.Context, redisClient *redis.Client, payload *openWebUIHandoffPayload) (bool, error) {
-	if redisClient == nil || payload == nil || payload.Nonce == "" {
+func consumeOpenWebUIHandoff(ctx context.Context, consume func(context.Context, string, time.Duration) (bool, error), payload *openWebUIHandoffPayload) (bool, error) {
+	if consume == nil || payload == nil || payload.Nonce == "" {
 		return false, errors.New("invalid handoff store input")
 	}
 	ttl := time.Until(time.Unix(payload.ExpiresAt, 0))
 	if ttl <= 0 {
 		return false, nil
 	}
-	return redisClient.SetNX(ctx, openWebUIHandoffConsumedKey+payload.Nonce, "1", ttl).Result()
+	return consume(ctx, openWebUIHandoffConsumedKey+payload.Nonce, ttl)
 }

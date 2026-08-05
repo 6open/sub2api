@@ -170,6 +170,6 @@ func hasAnyProviderSignupGrant(ctx context.Context, client *dbent.Client, userID
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return rows.Next(), rows.Err()
 }

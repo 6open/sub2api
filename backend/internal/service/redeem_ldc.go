@@ -32,11 +32,6 @@ type ldcCodeMetadata struct {
 	CreditedUSD             float64 `json:"credited_usd,omitempty"`
 }
 
-type linuxDoRedeemIdentity struct {
-	Subject  string
-	Username string
-}
-
 func calculateLDCCodeCreditUSD(ldcAmount, issuedUSD float64) float64 {
 	if ldcAmount <= 0 {
 		return 0

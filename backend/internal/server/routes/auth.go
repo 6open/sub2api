@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler"
@@ -74,7 +75,9 @@ func RegisterAuthRoutes(
 		}), h.Auth.ResetPassword)
 		auth.POST("/open-webui/handoff/verify", rateLimiter.LimitWithOptions("open-webui-handoff-verify", 60, time.Minute, middleware.RateLimitOptions{
 			FailureMode: middleware.RateLimitFailClose,
-		}), h.Auth.VerifyOpenWebUIHandoff(redisClient))
+		}), h.Auth.VerifyOpenWebUIHandoff(func(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+			return redisClient.SetNX(ctx, key, "1", ttl).Result()
+		}))
 		auth.POST("/linuxdo-shop/handoff/verify", h.Auth.VerifyLinuxDoShopHandoff)
 		auth.GET("/oauth/linuxdo/start", h.Auth.LinuxDoOAuthStart)
 		auth.POST("/oauth/linuxdo/start", rateLimiter.LimitWithOptions("oauth-linuxdo-start", 20, time.Minute, middleware.RateLimitOptions{

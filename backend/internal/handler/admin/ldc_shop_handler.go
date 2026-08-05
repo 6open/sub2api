@@ -100,7 +100,7 @@ func (h *LDCShopHandler) listFromDB(dbPath string, page, pageSize int, status, s
 	if err != nil {
 		return nil, fmt.Errorf("open code shop db: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	where := make([]string, 0, 2)
 	args := make([]any, 0, 8)
@@ -133,7 +133,7 @@ FROM purchase_orders`+whereSQL+` ORDER BY id DESC LIMIT ? OFFSET ?`, queryArgs..
 	if err != nil {
 		return nil, fmt.Errorf("query purchase_orders: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]ldcShopOrder, 0, pageSize)
 	for rows.Next() {
@@ -165,7 +165,7 @@ FROM purchase_orders`+whereSQL+` ORDER BY id DESC LIMIT ? OFFSET ?`, queryArgs..
 	statusCounts := map[string]int64{}
 	countRows, err := db.Query(`SELECT status, COUNT(*) FROM purchase_orders GROUP BY status`)
 	if err == nil {
-		defer countRows.Close()
+		defer func() { _ = countRows.Close() }()
 		for countRows.Next() {
 			var st string
 			var n int64
@@ -215,7 +215,7 @@ func (h *LDCShopHandler) listFromHTTP(ctx context.Context, baseURL, token string
 	if err != nil {
 		return nil, fmt.Errorf("request code shop failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("code shop returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))

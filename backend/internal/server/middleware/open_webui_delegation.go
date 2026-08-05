@@ -92,7 +92,7 @@ func parseOpenWebUIUserJWT(raw string, secret []byte, now time.Time) (*openWebUI
 		return nil, fmt.Errorf("invalid Open WebUI user JWT: %w", err)
 	}
 	if strings.TrimSpace(claims.Subject) == "" || strings.TrimSpace(claims.Email) == "" {
-		return nil, errors.New("Open WebUI user JWT is missing required claims")
+		return nil, errors.New("open WebUI user JWT is missing required claims")
 	}
 	return claims, nil
 }

@@ -8,8 +8,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 
-	"github.com/alicebob/miniredis/v2"
-	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,16 +53,21 @@ func TestOpenWebUIHandoffRejectsTamperedAndExpiredTokens(t *testing.T) {
 }
 
 func TestConsumeOpenWebUIHandoffOnlyOnce(t *testing.T) {
-	mini := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: mini.Addr()})
-	t.Cleanup(func() { _ = client.Close() })
+	consumedKeys := make(map[string]bool)
+	consume := func(_ context.Context, key string, _ time.Duration) (bool, error) {
+		if consumedKeys[key] {
+			return false, nil
+		}
+		consumedKeys[key] = true
+		return true, nil
+	}
 	payload := &openWebUIHandoffPayload{Nonce: "single-use", ExpiresAt: time.Now().Add(time.Minute).Unix()}
 
-	consumed, err := consumeOpenWebUIHandoff(context.Background(), client, payload)
+	consumed, err := consumeOpenWebUIHandoff(context.Background(), consume, payload)
 	require.NoError(t, err)
 	require.True(t, consumed)
 
-	consumed, err = consumeOpenWebUIHandoff(context.Background(), client, payload)
+	consumed, err = consumeOpenWebUIHandoff(context.Background(), consume, payload)
 	require.NoError(t, err)
 	require.False(t, consumed)
 }
