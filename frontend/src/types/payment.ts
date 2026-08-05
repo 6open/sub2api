@@ -78,6 +78,17 @@ export interface CheckoutInfoResponse {
   alipay_force_qrcode?: boolean
   /** When true, official Alipay mobile orders use precreate plus an Alipay app deep link */
   alipay_mobile_precreate_deep_link?: boolean
+  promotion?: {
+    active: boolean
+    id?: string
+    payment_type?: string
+    multiplier?: number
+    pay_limit?: number
+    pay_used?: number
+    pay_remaining?: number
+    starts_at?: string
+    ends_at?: string
+  }
 }
 
 // ==================== Orders ====================

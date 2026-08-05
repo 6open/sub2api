@@ -23,6 +23,7 @@ import (
 // --- Order Creation ---
 
 func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest) (*CreateOrderResponse, error) {
+	orderCreatedAt := time.Now()
 	if req.OrderType == "" {
 		req.OrderType = payment.OrderTypeBalance
 	}
@@ -62,6 +63,9 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 		orderAmount = calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
 	}
 	feeRate := cfg.RechargeFeeRate
+	if isLKLBAlipayPromotionRequest(req, orderCreatedAt) {
+		feeRate = 0
+	}
 	methodCurrency := payment.DefaultPaymentCurrency
 	if s.configService != nil {
 		methodCurrency, err = s.configService.ValidateMethodCurrencyConsistency(ctx, req.PaymentType)
@@ -100,7 +104,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if oauthResp != nil {
 		return oauthResp, nil
 	}
-	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, sel)
+	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, sel, orderCreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +153,7 @@ func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRe
 	return plan, nil
 }
 
-func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
+func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection, orderCreatedAt time.Time) (*dbent.PaymentOrder, error) {
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -165,12 +169,15 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	if tm <= 0 {
 		tm = defaultOrderTimeoutMin
 	}
-	exp := time.Now().Add(time.Duration(tm) * time.Minute)
+	exp := orderCreatedAt.Add(time.Duration(tm) * time.Minute)
 	outTradeNo, err := s.allocateOutTradeNo(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
+	if err := s.applyLKLBPromotionInTx(ctx, tx, req, orderCreatedAt, payAmount, &orderAmount, &exp, &providerSnapshot); err != nil {
+		return nil, err
+	}
 	selectedInstanceID := ""
 	selectedProviderKey := ""
 	if sel != nil {

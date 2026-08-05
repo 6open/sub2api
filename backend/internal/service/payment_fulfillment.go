@@ -150,6 +150,14 @@ func expectedNotificationProviderKey(registry *payment.Registry, orderPaymentTyp
 func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, tradeNo string, paid float64, pk string) error {
 	previousStatus := o.Status
 	now := time.Now()
+	if isLKLBPromotionOrder(o) {
+		if previousStatus != OrderStatusPending {
+			return s.alreadyProcessed(ctx, o)
+		}
+		if !now.Before(lklbPromotionEnd()) {
+			return infraerrors.Conflict("PROMOTION_ORDER_EXPIRED", "promotion order must be paid before the campaign ends")
+		}
+	}
 	grace := now.Add(-paymentGraceMinutes * time.Minute)
 	c, err := s.entClient.PaymentOrder.Update().Where(
 		paymentorder.IDEQ(o.ID),
@@ -700,6 +708,9 @@ func affiliateRebateBaseAmount(o *dbent.PaymentOrder) float64 {
 	}
 	switch o.OrderType {
 	case payment.OrderTypeBalance, payment.OrderTypeSubscription:
+		if isLKLBPromotionOrder(o) {
+			return o.PayAmount
+		}
 		return o.Amount
 	default:
 		return 0

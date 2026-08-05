@@ -117,6 +117,16 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 			return
 		}
 	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	promotion, err := h.paymentService.GetLKLBPaymentPromotion(ctx, subject.UserID, time.Now())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 
 	// Fetch plans with group info
 	plans, _ := h.configService.ListPlansForSale(ctx)
@@ -154,6 +164,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		StripePublishableKey:          cfg.StripePublishableKey,
 		AlipayForceQRCode:             cfg.AlipayForceQRCode,
 		AlipayMobilePrecreateDeepLink: alipayMobilePrecreateDeepLink,
+		Promotion:                     promotion,
 	})
 }
 
@@ -171,6 +182,7 @@ type checkoutInfoResponse struct {
 	StripePublishableKey          string                          `json:"stripe_publishable_key"`
 	AlipayForceQRCode             bool                            `json:"alipay_force_qrcode"`
 	AlipayMobilePrecreateDeepLink bool                            `json:"alipay_mobile_precreate_deep_link"`
+	Promotion                     service.LKLBPaymentPromotion    `json:"promotion"`
 }
 
 type checkoutPlan struct {

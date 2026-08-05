@@ -35,6 +35,18 @@
         <template v-else>
           <!-- Top-up Tab -->
           <template v-if="activeTab === 'recharge'">
+            <div v-if="promotionActive" class="border-y border-rose-200 bg-rose-50 px-5 py-4 dark:border-rose-900 dark:bg-rose-950/40">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p class="text-base font-semibold text-rose-700 dark:text-rose-300">支付宝限时直充 5 折</p>
+                  <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">8月6日－8月8日，实付 ¥100 到账 $200</p>
+                </div>
+                <div class="text-right text-sm">
+                  <p class="text-gray-500 dark:text-gray-400">本账号剩余优惠实付</p>
+                  <p class="font-semibold text-gray-900 dark:text-white">¥{{ promotionRemaining.toFixed(2) }}</p>
+                </div>
+              </div>
+            </div>
             <!-- Recharge Account Card -->
             <div class="card p-5">
               <p class="text-xs font-medium text-gray-400 dark:text-gray-500">{{ t('payment.rechargeAccount') }}</p>
@@ -48,10 +60,10 @@
             <div class="card p-6">
               <AmountInput
                 v-model="amount"
-                :amounts="[1, 10, 100]"
+                :amounts="promotionActive ? [10, 50, 100] : [1, 10, 100]"
                 :currency-symbol="selectedCurrencySymbol"
                 :min="globalMinAmount"
-                :max="globalMaxAmount"
+                :max="promotionActive ? promotionInputMax : globalMaxAmount"
               />
               <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
             </div>
@@ -68,20 +80,20 @@
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.paymentAmount') }}</span>
                   <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(validAmount) }}</span>
                 </div>
-                <div v-if="feeRate > 0" class="flex justify-between">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
+                <div v-if="effectiveFeeRate > 0" class="flex justify-between">
+                  <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }} ({{ effectiveFeeRate }}%)</span>
                   <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
                 </div>
-                <div v-if="feeRate > 0" class="flex justify-between border-t border-gray-200 pt-2 dark:border-dark-600">
+                <div v-if="effectiveFeeRate > 0" class="flex justify-between border-t border-gray-200 pt-2 dark:border-dark-600">
                   <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.actualPay') }}</span>
                   <span class="text-lg font-bold text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
                 </div>
-                <div v-if="balanceRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
+                <div v-if="effectiveRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': effectiveFeeRate <= 0 }">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
                   <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
                 </div>
-                <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
-                  {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
+                <p v-if="effectiveRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
+                  {{ promotionActive ? '活动优惠仅适用于支付宝在线充值' : t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
                 </p>
               </div>
             </div>
@@ -545,6 +557,18 @@ const checkout = ref<CheckoutInfoResponse>({
   plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
 })
 
+const promotionActive = computed(() =>
+  checkout.value.promotion?.active === true
+  && checkout.value.promotion.payment_type === 'alipay'
+  && isBuiltInAlipayMethod(selectedMethod.value)
+)
+const promotionRemaining = computed(() => Math.max(0, checkout.value.promotion?.pay_remaining ?? 0))
+const promotionInputMax = computed(() => {
+  const methodMax = globalMaxAmount.value
+  if (methodMax > 0) return Math.min(methodMax, promotionRemaining.value)
+  return promotionRemaining.value
+})
+
 const tabs = computed(() => {
   const result: { key: 'recharge' | 'subscription'; label: string }[] = []
   if (!checkout.value.balance_disabled) result.push({ key: 'recharge', label: t('payment.tabTopUp') })
@@ -564,7 +588,8 @@ const subscriptionUsdToCnyRate = computed(() => {
   const rate = checkout.value.subscription_usd_to_cny_rate
   return Number.isFinite(rate) && rate > 0 ? rate : 0
 })
-const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
+const effectiveRechargeMultiplier = computed(() => promotionActive.value ? (checkout.value.promotion?.multiplier ?? 2) : balanceRechargeMultiplier.value)
+const creditedAmount = computed(() => Math.round((validAmount.value * effectiveRechargeMultiplier.value) * 100) / 100)
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
 const planGridClass = computed(() => {
@@ -670,19 +695,23 @@ const methodOptions = computed<PaymentMethodOption[]>(() =>
 )
 
 const feeRate = computed(() => checkout.value?.recharge_fee_rate ?? 0)
+const effectiveFeeRate = computed(() => promotionActive.value ? 0 : feeRate.value)
 const feeAmount = computed(() =>
-  feeRate.value > 0 && validAmount.value > 0
-    ? Math.ceil(((validAmount.value * feeRate.value) / 100) * 100) / 100
+  effectiveFeeRate.value > 0 && validAmount.value > 0
+    ? Math.ceil(((validAmount.value * effectiveFeeRate.value) / 100) * 100) / 100
     : 0
 )
 const totalAmount = computed(() =>
-  feeRate.value > 0 && validAmount.value > 0
+  effectiveFeeRate.value > 0 && validAmount.value > 0
     ? Math.round((validAmount.value + feeAmount.value) * 100) / 100
     : validAmount.value
 )
 
 const amountError = computed(() => {
   if (validAmount.value <= 0) return ''
+  if (promotionActive.value && validAmount.value > promotionRemaining.value) {
+    return `本账号活动剩余可实付 ¥${promotionRemaining.value.toFixed(2)}`
+  }
   // No method can handle this amount
   if (!enabledMethods.value.some((m) => amountFitsMethod(validAmount.value, m))) {
     return t('payment.amountNoMethod')
@@ -698,6 +727,7 @@ const amountError = computed(() => {
 
 const canSubmit = computed(() =>
   validAmount.value > 0
+    && (!promotionActive.value || validAmount.value <= promotionRemaining.value)
     && amountFitsMethod(validAmount.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
 )

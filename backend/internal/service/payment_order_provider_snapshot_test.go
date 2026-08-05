@@ -6,6 +6,7 @@ import (
 	"context"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/stretchr/testify/require"
@@ -97,6 +98,7 @@ func TestCreateOrderInTx_WritesProviderSnapshot(t *testing.T) {
 				"secretKey": "do-not-copy",
 			},
 		},
+		time.Now(),
 	)
 	require.NoError(t, err)
 	require.Equal(t, strconv.FormatInt(instance.ID, 10), valueOrEmpty(order.ProviderInstanceID))

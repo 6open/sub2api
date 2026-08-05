@@ -30,9 +30,19 @@ describe('PaymentView static purchase entries', () => {
     expect(source).toContain('<!-- Recharge Account Card -->')
     expect(source).toContain('class="card p-5"')
     expect(source).toContain('class="card p-6"')
-    expect(source).toContain(':amounts="[1, 10, 100]"')
+    expect(source).toContain(':amounts="promotionActive ? [10, 50, 100] : [1, 10, 100]"')
     expect(source).not.toContain('max-w-2xl')
     expect(source).not.toContain('[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]')
+  })
+
+  it('renders the August Alipay half-price promotion with a per-account cap', () => {
+    const source = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
+
+    expect(source).toContain('支付宝限时直充 5 折')
+    expect(source).toContain('8月6日－8月8日，实付 ¥100 到账 $200')
+    expect(source).toContain('promotionRemaining.toFixed(2)')
+    expect(source).toContain('effectiveRechargeMultiplier')
+    expect(source).toContain('validAmount.value <= promotionRemaining.value')
   })
 
   it('groups secondary purchase routes in one compact full-width card', () => {
