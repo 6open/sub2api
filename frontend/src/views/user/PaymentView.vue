@@ -127,7 +127,7 @@
                   </span>
                   <div class="min-w-0 flex-1">
                     <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-white">LinuxDO 积分购买</h3>
-                    <p class="mt-0.5 text-xs leading-5 text-gray-500 dark:text-gray-400">前 10刀额度享特惠：10 LDC = 1刀<br>超出后按 50 LDC = 1刀</p>
+                    <p class="mt-0.5 text-xs leading-5 text-gray-500 dark:text-gray-400">前 10刀额度享特惠：10 LDC = 1刀<br>超出后按 40 LDC = 1刀</p>
                   </div>
                   <button type="button" class="btn btn-secondary btn-sm shrink-0" @click="handleLinuxDoShopPurchase">购买</button>
                 </div>

@@ -26,9 +26,9 @@ func TestCalculateLDCCodeCreditUSDUsesTieredUserQuota(t *testing.T) {
 		wantCreditUSD float64
 	}{
 		{name: "all promo", ldcAmount: 100, issuedUSD: 0, wantCreditUSD: 10},
-		{name: "partial promo then normal", ldcAmount: 100, issuedUSD: 6, wantCreditUSD: 5.2},
-		{name: "promo exhausted", ldcAmount: 100, issuedUSD: 10, wantCreditUSD: 2},
-		{name: "more than promo from zero", ldcAmount: 150, issuedUSD: 0, wantCreditUSD: 11},
+		{name: "partial promo then normal", ldcAmount: 100, issuedUSD: 6, wantCreditUSD: 5.5},
+		{name: "promo exhausted", ldcAmount: 100, issuedUSD: 10, wantCreditUSD: 2.5},
+		{name: "more than promo from zero", ldcAmount: 150, issuedUSD: 0, wantCreditUSD: 11.25},
 	}
 
 	for _, tt := range tests {

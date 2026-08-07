@@ -47,14 +47,14 @@ _credit_query_lock=threading.Lock()
 _credit_query_last_attempt={}
 
 PLANS={
-    'usd1': {'label':'1 刀额度','usd_value':1,'redeem_value':1,'ldc':'50.00','title':'LKLB 中转站 1刀额度'},
-    'usd5': {'label':'5 刀额度','usd_value':5,'redeem_value':5,'ldc':'250.00','title':'LKLB 中转站 5刀额度'},
-    'usd10': {'label':'10 刀额度','usd_value':10,'redeem_value':10,'ldc':'500.00','title':'LKLB 中转站 10刀额度'},
+    'usd1': {'label':'1 刀额度','usd_value':1,'redeem_value':1,'ldc':'40.00','title':'LKLB 中转站 1刀额度'},
+    'usd5': {'label':'5 刀额度','usd_value':5,'redeem_value':5,'ldc':'200.00','title':'LKLB 中转站 5刀额度'},
+    'usd10': {'label':'10 刀额度','usd_value':10,'redeem_value':10,'ldc':'400.00','title':'LKLB 中转站 10刀额度'},
 }
 
 PROMO_USD_LIMIT=10
 PROMO_LDC_PER_USD=10
-NORMAL_LDC_PER_USD=50
+NORMAL_LDC_PER_USD=40
 
 def remaining_promo_usd(issued_usd_value):
     try:
@@ -860,7 +860,7 @@ class H(BaseHTTPRequestHandler):
             login_html="<div class='login-note'>已登录：{}</div> <a class='btn2' href='/api/linuxdo-connect/logout'>退出</a>".format(html.escape(user.get('username','')))
         else:
             login_html="<div class='login-note'>点击购买时使用 LinuxDO 登录</div>"
-        body=["<div class='hero'><div><h1>LKLB LDC 充值</h1><p class='subtitle'>阶梯计价：每个账号前 100 LDC 可兑换 10刀额度；超出部分按 50 LDC 兑换 1刀额度。</p>{}</div></div>".format(login_html)]
+        body=["<div class='hero'><div><h1>LKLB LDC 充值</h1><p class='subtitle'>阶梯计价：每个账号前 100 LDC 可兑换 10刀额度；超出部分按 40 LDC 兑换 1刀额度。</p>{}</div></div>".format(login_html)]
         body.append("<div class='plans'>")
         fixed_ldc = [('10','10 LDC'), ('50','50 LDC'), ('100','100 LDC')]
         for amount,label in fixed_ldc:

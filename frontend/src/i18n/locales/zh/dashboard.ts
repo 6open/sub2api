@@ -646,7 +646,7 @@ export default {
     codeTypeTipTitle: '兑换码类型说明',
     generalCodeTip: '普通兑换码：按兑换码面值直接增加余额、并发数或订阅权限。',
     ldcCodeTip:
-      'LDC兑换码：按当前 lklb 账号历史 LDC 兑换额度阶梯折算，前 $10 按 10 LDC = $1，超出部分按 50 LDC = $1。',
+      'LDC兑换码：按当前 lklb 账号历史 LDC 兑换额度阶梯折算，前 $10 按 10 LDC = $1，超出部分按 40 LDC = $1。',
     recentActivity: '最近活动',
     historyWillAppear: '您的兑换历史将显示在这里',
     balanceAddedRedeem: '余额充值（兑换）',

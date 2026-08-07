@@ -19,7 +19,7 @@ describe('PaymentView static purchase entries', () => {
     expect(source).toContain('startLinuxDoShopHandoff')
     expect(source).toContain('前 10刀额度享特惠')
     expect(source).toContain('10 LDC = 1刀')
-    expect(source).toContain('超出后按 50 LDC = 1刀')
+    expect(source).toContain('超出后按 40 LDC = 1刀')
     expect(source).not.toContain('支持自定义额度')
     expect(source).not.toContain('点击购买时再认证')
     expect(source).toContain('>购买</button>')
