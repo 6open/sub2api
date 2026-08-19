@@ -154,6 +154,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		StripePublishableKey:          cfg.StripePublishableKey,
 		AlipayForceQRCode:             cfg.AlipayForceQRCode,
 		AlipayMobilePrecreateDeepLink: alipayMobilePrecreateDeepLink,
+		BalancePackages:               service.AvailableBalancePackages(cfg.BalanceRechargeMultiplier),
 	})
 }
 
@@ -171,6 +172,7 @@ type checkoutInfoResponse struct {
 	StripePublishableKey          string                          `json:"stripe_publishable_key"`
 	AlipayForceQRCode             bool                            `json:"alipay_force_qrcode"`
 	AlipayMobilePrecreateDeepLink bool                            `json:"alipay_mobile_precreate_deep_link"`
+	BalancePackages               []service.BalancePackage        `json:"balance_packages"`
 }
 
 type checkoutPlan struct {
@@ -236,6 +238,7 @@ type CreateOrderRequest struct {
 	PaymentSource     string  `json:"payment_source"`
 	OrderType         string  `json:"order_type"`
 	PlanID            int64   `json:"plan_id"`
+	BalancePackageID  string  `json:"balance_package_id"`
 	// IsMobile lets the frontend declare its mobile status directly. When
 	// nil we fall back to User-Agent heuristics (which miss iPadOS / some
 	// embedded browsers that strip the "Mobile" keyword).
@@ -272,20 +275,21 @@ func (h *PaymentHandler) CreateOrder(c *gin.Context) {
 		mobile = *req.IsMobile
 	}
 	result, err := h.paymentService.CreateOrder(c.Request.Context(), service.CreateOrderRequest{
-		UserID:          subject.UserID,
-		Amount:          req.Amount,
-		PaymentType:     req.PaymentType,
-		OpenID:          req.OpenID,
-		ClientIP:        c.ClientIP(),
-		IsMobile:        mobile,
-		IsWeChatBrowser: isWeChatBrowser(c),
-		SrcHost:         c.Request.Host,
-		SrcURL:          c.Request.Referer(),
-		ReturnURL:       req.ReturnURL,
-		PaymentSource:   req.PaymentSource,
-		OrderType:       req.OrderType,
-		PlanID:          req.PlanID,
-		Locale:          c.GetHeader("Accept-Language"),
+		UserID:           subject.UserID,
+		Amount:           req.Amount,
+		PaymentType:      req.PaymentType,
+		OpenID:           req.OpenID,
+		ClientIP:         c.ClientIP(),
+		IsMobile:         mobile,
+		IsWeChatBrowser:  isWeChatBrowser(c),
+		SrcHost:          c.Request.Host,
+		SrcURL:           c.Request.Referer(),
+		ReturnURL:        req.ReturnURL,
+		PaymentSource:    req.PaymentSource,
+		OrderType:        req.OrderType,
+		PlanID:           req.PlanID,
+		BalancePackageID: req.BalancePackageID,
+		Locale:           c.GetHeader("Accept-Language"),
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -328,6 +332,9 @@ func applyWeChatPaymentResumeClaims(req *CreateOrderRequest, claims *service.WeC
 	}
 	if claims.PlanID > 0 {
 		req.PlanID = claims.PlanID
+	}
+	if strings.TrimSpace(claims.BalancePackageID) != "" {
+		req.BalancePackageID = claims.BalancePackageID
 	}
 	return nil
 }

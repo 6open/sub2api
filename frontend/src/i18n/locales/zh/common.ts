@@ -160,6 +160,8 @@ export default {
     dashboard: '仪表盘',
     announcements: '公告',
     apiKeys: 'API 密钥',
+    aiChat: 'AI 对话 / 设计生图',
+    aiChatOpenFailed: '无法打开 AI 对话，请稍后重试',
     batchImage: '批量生图',
     usage: '使用记录',
     redeem: '兑换',
@@ -244,6 +246,7 @@ export default {
     registrationFailed: '注册失败，请重试。',
     emailDomainRegistrationLimit:
       '该邮箱域名无法注册新账户。请使用主流邮箱注册；如需使用企业邮箱，请联系客服添加域名白名单。',
+    emailSubaddressNotAllowed: '邮箱不支持 +tag 别名，请使用原始邮箱地址。',
     emailSuffixNotAllowed: '该邮箱域名不在允许注册范围内。',
     emailSuffixNotAllowedWithAllowed: '该邮箱域名不被允许。可用域名：{suffixes}',
     emailSuffixAllowedMore: '等 {count} 项',

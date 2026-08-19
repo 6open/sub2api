@@ -48,6 +48,7 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 		SetKey(key.Key).
 		SetName(key.Name).
 		SetStatus(key.Status).
+		SetIsOpenWebuiDefault(key.IsOpenWebUIDefault).
 		SetNillableGroupID(key.GroupID).
 		SetNillableLastUsedAt(key.LastUsedAt).
 		SetQuota(key.Quota).
@@ -136,6 +137,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 			apikey.FieldGroupID,
 			apikey.FieldName,
 			apikey.FieldStatus,
+			apikey.FieldIsOpenWebuiDefault,
 			apikey.FieldIPWhitelist,
 			apikey.FieldIPBlacklist,
 			apikey.FieldQuota,
@@ -237,8 +239,88 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 	return apiKeyEntityToService(m), nil
 }
 
+func (r *apiKeyRepository) GetOpenWebUIDefaultKey(ctx context.Context, userID int64) (string, error) {
+	credential, err := r.activeQuery().
+		Where(apikey.UserIDEQ(userID), apikey.IsOpenWebuiDefaultEQ(true)).
+		Select(apikey.FieldKey).
+		String(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return "", service.ErrOpenWebUIDefaultKeyNotFound
+		}
+		return "", err
+	}
+	return credential, nil
+}
+
+func (r *apiKeyRepository) GetOpenWebUIImageKey(ctx context.Context, userID, groupID int64) (string, error) {
+	credential, err := r.activeQuery().
+		Where(
+			apikey.UserIDEQ(userID),
+			apikey.GroupIDEQ(groupID),
+			apikey.NameEQ("Open WebUI Image"),
+		).
+		Select(apikey.FieldKey).
+		String(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return "", service.ErrOpenWebUIImageKeyNotFound
+		}
+		return "", err
+	}
+	return credential, nil
+}
+
+func (r *apiKeyRepository) SetOpenWebUIDefault(ctx context.Context, userID, apiKeyID int64) error {
+	apply := func(txCtx context.Context, client *dbent.Client) error {
+		exists, err := client.APIKey.Query().Where(
+			apikey.IDEQ(apiKeyID),
+			apikey.UserIDEQ(userID),
+			apikey.DeletedAtIsNil(),
+		).Exist(txCtx)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return service.ErrAPIKeyNotFound
+		}
+		if _, err := client.APIKey.Update().Where(
+			apikey.UserIDEQ(userID),
+			apikey.IsOpenWebuiDefaultEQ(true),
+			apikey.DeletedAtIsNil(),
+		).SetIsOpenWebuiDefault(false).Save(txCtx); err != nil {
+			return err
+		}
+		updated, err := client.APIKey.Update().Where(
+			apikey.IDEQ(apiKeyID),
+			apikey.UserIDEQ(userID),
+			apikey.DeletedAtIsNil(),
+		).SetIsOpenWebuiDefault(true).Save(txCtx)
+		if err != nil {
+			return err
+		}
+		if updated == 0 {
+			return service.ErrAPIKeyNotFound
+		}
+		return nil
+	}
+
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return apply(ctx, tx.Client())
+	}
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := apply(txCtx, tx.Client()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey, fields service.APIKeyUpdateFields) error {
-	// 空掩码代表调用方不改任何列，直接返回，避免产生一次无意义的整行写。
 	if fields.IsEmpty() {
 		return nil
 	}
@@ -868,29 +950,30 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		return nil
 	}
 	out := &service.APIKey{
-		ID:            m.ID,
-		UserID:        m.UserID,
-		Key:           m.Key,
-		Name:          m.Name,
-		Status:        m.Status,
-		IPWhitelist:   m.IPWhitelist,
-		IPBlacklist:   m.IPBlacklist,
-		LastUsedAt:    m.LastUsedAt,
-		CreatedAt:     m.CreatedAt,
-		UpdatedAt:     m.UpdatedAt,
-		GroupID:       m.GroupID,
-		Quota:         m.Quota,
-		QuotaUsed:     m.QuotaUsed,
-		ExpiresAt:     m.ExpiresAt,
-		RateLimit5h:   m.RateLimit5h,
-		RateLimit1d:   m.RateLimit1d,
-		RateLimit7d:   m.RateLimit7d,
-		Usage5h:       m.Usage5h,
-		Usage1d:       m.Usage1d,
-		Usage7d:       m.Usage7d,
-		Window5hStart: m.Window5hStart,
-		Window1dStart: m.Window1dStart,
-		Window7dStart: m.Window7dStart,
+		ID:                 m.ID,
+		UserID:             m.UserID,
+		Key:                m.Key,
+		Name:               m.Name,
+		Status:             m.Status,
+		IsOpenWebUIDefault: m.IsOpenWebuiDefault,
+		IPWhitelist:        m.IPWhitelist,
+		IPBlacklist:        m.IPBlacklist,
+		LastUsedAt:         m.LastUsedAt,
+		CreatedAt:          m.CreatedAt,
+		UpdatedAt:          m.UpdatedAt,
+		GroupID:            m.GroupID,
+		Quota:              m.Quota,
+		QuotaUsed:          m.QuotaUsed,
+		ExpiresAt:          m.ExpiresAt,
+		RateLimit5h:        m.RateLimit5h,
+		RateLimit1d:        m.RateLimit1d,
+		RateLimit7d:        m.RateLimit7d,
+		Usage5h:            m.Usage5h,
+		Usage1d:            m.Usage1d,
+		Usage7d:            m.Usage7d,
+		Window5hStart:      m.Window5hStart,
+		Window1dStart:      m.Window1dStart,
+		Window7dStart:      m.Window7dStart,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)
@@ -925,6 +1008,7 @@ func userEntityToService(u *dbent.User) *service.User {
 		Concurrency:                u.Concurrency,
 		Status:                     u.Status,
 		SignupSource:               u.SignupSource,
+		SignupIP:                   u.SignupIP,
 		LastLoginAt:                u.LastLoginAt,
 		LastActiveAt:               u.LastActiveAt,
 		TotpSecretEncrypted:        u.TotpSecretEncrypted,

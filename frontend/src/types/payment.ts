@@ -78,6 +78,15 @@ export interface CheckoutInfoResponse {
   alipay_force_qrcode?: boolean
   /** When true, official Alipay mobile orders use precreate plus an Alipay app deep link */
   alipay_mobile_precreate_deep_link?: boolean
+  balance_packages: BalancePackage[]
+}
+
+export interface BalancePackage {
+  id: string
+  credit_amount: number
+  pay_amount: number
+  discount_rate: number
+  badge?: 'recommended' | 'best_value' | string
 }
 
 // ==================== Orders ====================
@@ -171,6 +180,7 @@ export interface CreateOrderRequest {
   payment_type: string
   order_type: string
   plan_id?: number
+  balance_package_id?: string
   return_url?: string
   payment_source?: string
   openid?: string

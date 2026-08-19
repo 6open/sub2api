@@ -55,16 +55,17 @@ type ResumeTokenClaims struct {
 }
 
 type WeChatPaymentResumeClaims struct {
-	TokenType   string `json:"tk,omitempty"`
-	OpenID      string `json:"openid"`
-	PaymentType string `json:"pt,omitempty"`
-	Amount      string `json:"amt,omitempty"`
-	OrderType   string `json:"ot,omitempty"`
-	PlanID      int64  `json:"pid,omitempty"`
-	RedirectTo  string `json:"rd,omitempty"`
-	Scope       string `json:"scp,omitempty"`
-	IssuedAt    int64  `json:"iat"`
-	ExpiresAt   int64  `json:"exp,omitempty"`
+	TokenType        string `json:"tk,omitempty"`
+	OpenID           string `json:"openid"`
+	PaymentType      string `json:"pt,omitempty"`
+	Amount           string `json:"amt,omitempty"`
+	OrderType        string `json:"ot,omitempty"`
+	PlanID           int64  `json:"pid,omitempty"`
+	BalancePackageID string `json:"bpid,omitempty"`
+	RedirectTo       string `json:"rd,omitempty"`
+	Scope            string `json:"scp,omitempty"`
+	IssuedAt         int64  `json:"iat"`
+	ExpiresAt        int64  `json:"exp,omitempty"`
 }
 
 type PaymentResumeService struct {
@@ -301,6 +302,35 @@ func buildPaymentReturnURL(base string, orderID int64, outTradeNo string, resume
 	query.Set("status", "success")
 	parsed.RawQuery = query.Encode()
 
+	return parsed.String(), nil
+}
+
+// buildProviderPaymentReturnURL keeps EasyPay return URLs to one query
+// parameter. Some EasyPay gateways escape separators in the final redirect as
+// literal "&amp;", which can be rejected by an upstream WAF before reaching the
+// application. The signed resume token contains all context needed to recover
+// the order; order_id remains a fallback when resume signing is unavailable.
+func buildProviderPaymentReturnURL(providerKey, base string, orderID int64, outTradeNo string, resumeToken string) (string, error) {
+	if providerKey != payment.TypeEasyPay {
+		return buildPaymentReturnURL(base, orderID, outTradeNo, resumeToken)
+	}
+
+	canonical := strings.TrimSpace(base)
+	if canonical == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(canonical)
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" {
+		return "", infraerrors.BadRequest("INVALID_RETURN_URL", "return_url must be a valid absolute URL")
+	}
+	parsed.Fragment = ""
+	query := url.Values{}
+	if token := strings.TrimSpace(resumeToken); token != "" {
+		query.Set("resume_token", token)
+	} else if orderID > 0 {
+		query.Set("order_id", strconv.FormatInt(orderID, 10))
+	}
+	parsed.RawQuery = query.Encode()
 	return parsed.String(), nil
 }
 

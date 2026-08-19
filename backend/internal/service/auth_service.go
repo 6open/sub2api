@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ var (
 	ErrUserNotActive                = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
 	ErrEmailExists                  = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
 	ErrEmailReserved                = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
+	ErrEmailSubaddressNotAllowed    = infraerrors.BadRequest("EMAIL_SUBADDRESS_NOT_ALLOWED", "email plus-address tags are not allowed for registration")
 	ErrInvalidToken                 = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
 	ErrTokenExpired                 = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")
 	ErrAccessTokenExpired           = infraerrors.Unauthorized("ACCESS_TOKEN_EXPIRED", "access token has expired")
@@ -48,6 +50,7 @@ var (
 	ErrInvitationCodeInvalid   = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
 	ErrOAuthInvitationRequired = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
 	ErrCaptchaProviderConflict = infraerrors.ServiceUnavailable("CAPTCHA_PROVIDER_CONFLICT", "multiple captcha providers are enabled")
+	ErrRegistrationRateLimited = infraerrors.TooManyRequests("REGISTRATION_RATE_LIMITED", "too many registration attempts, please try again later")
 )
 
 // maxTokenLength 限制 token 大小，避免超长 header 触发解析时的异常内存分配。
@@ -170,6 +173,14 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if isReservedEmail(email) {
 		return "", nil, ErrEmailReserved
 	}
+	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
+		return "", nil, err
+	}
+	if blocked, reason := s.isSignupRiskBlocked(ctx, email); blocked {
+		logger.LegacyPrintf("service.auth", "[Auth] Blocking suspected bulk registration: reason=%s", reason)
+		return "", nil, ErrRegistrationRateLimited
+	}
+
 	// 检查是否需要邀请码
 	var invitationRedeemCode *RedeemCode
 	if s.settingService != nil && s.settingService.IsInvitationCodeEnabled(ctx) {
@@ -243,8 +254,8 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		Concurrency:  grantPlan.Concurrency,
 		RPMLimit:     defaultRPMLimit,
 		Status:       StatusActive,
+		SignupIP:     signupIPFromContext(ctx),
 	}
-
 	if err := s.createUserWithRegistrationEmailGuard(ctx, user); err != nil {
 		// 优先检查邮箱冲突错误（竞态条件下可能发生）
 		switch {
@@ -305,6 +316,170 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	return token, user, nil
 }
 
+const bulkSignupLookback = 24 * time.Hour
+const generatedSignupBurstThreshold = 3
+
+type signupAuditObservation struct {
+	IP        string
+	UserAgent string
+}
+
+// isSignupRiskBlocked is deliberately fail-open: risk telemetry must
+// never turn a database issue into a registration outage.
+func (s *AuthService) isSignupRiskBlocked(ctx context.Context, email string) (bool, string) {
+	if looksLikeSuspiciousGmailDotEmail(email) {
+		return true, "suspicious_gmail_dot_pattern"
+	}
+	binding := SessionBindingFromContext(ctx)
+	if s == nil || s.entClient == nil || binding == nil || !looksLikeGeneratedSignupEmail(email) {
+		return false, ""
+	}
+	cutoff := time.Now().UTC().Add(-bulkSignupLookback)
+
+	recentEmailRows, err := s.entClient.QueryContext(ctx, `
+		SELECT email
+		FROM users
+		WHERE created_at >= $1
+		  AND deleted_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT 500`, cutoff)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to inspect recent signup emails: %v (continuing with fingerprint checks)", err)
+	} else {
+		generatedCount := 0
+		for recentEmailRows.Next() {
+			var recentEmail string
+			if scanErr := recentEmailRows.Scan(&recentEmail); scanErr != nil {
+				logger.LegacyPrintf("service.auth", "[Auth] Failed to scan recent signup email: %v (continuing with fingerprint checks)", scanErr)
+				break
+			}
+			if looksLikeGeneratedSignupEmail(recentEmail) {
+				generatedCount++
+			}
+		}
+		_ = recentEmailRows.Close()
+		if generatedCount >= generatedSignupBurstThreshold {
+			return true, "generated_email_signup_burst"
+		}
+	}
+
+	rows, err := s.entClient.QueryContext(ctx, `
+		SELECT client_ip, user_agent
+		FROM audit_logs
+		WHERE action = $1
+		  AND status_code BETWEEN 200 AND 299
+		  AND created_at >= $2
+		ORDER BY created_at DESC
+		LIMIT 500`, "auth.register", cutoff)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to inspect signup risk telemetry: %v (fail-open)", err)
+		return false, ""
+	}
+	defer func() { _ = rows.Close() }()
+
+	observations := make([]signupAuditObservation, 0, 16)
+	for rows.Next() {
+		var observation signupAuditObservation
+		if err := rows.Scan(&observation.IP, &observation.UserAgent); err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to scan signup risk telemetry: %v (fail-open)", err)
+			return false, ""
+		}
+		observations = append(observations, observation)
+	}
+	if err := rows.Err(); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to read signup risk telemetry: %v (fail-open)", err)
+		return false, ""
+	}
+
+	if isSuspectedBulkSignup(email, binding.IP, binding.UserAgent, observations) {
+		return true, "generated_email_with_repeated_subnet_fingerprint"
+	}
+	return false, ""
+}
+
+func looksLikeGeneratedMicrosoftEmail(email string) bool {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(email)), "@")
+	if len(parts) != 2 {
+		return false
+	}
+	switch parts[1] {
+	case "outlook.com", "hotmail.com", "live.com":
+	default:
+		return false
+	}
+
+	local := parts[0]
+	digitStart := len(local)
+	for digitStart > 0 && local[digitStart-1] >= '0' && local[digitStart-1] <= '9' {
+		digitStart--
+	}
+	if len(local)-digitStart < 2 || digitStart < 5 {
+		return false
+	}
+	for i := 0; i < digitStart; i++ {
+		if local[i] < 'a' || local[i] > 'z' {
+			return false
+		}
+	}
+	return true
+}
+
+func looksLikeSuspiciousGmailDotEmail(email string) bool {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(email)), "@")
+	if len(parts) != 2 || (parts[1] != "gmail.com" && parts[1] != "googlemail.com") {
+		return false
+	}
+	return strings.Contains(parts[0], ".")
+}
+
+func looksLikeGeneratedSignupEmail(email string) bool {
+	return looksLikeGeneratedMicrosoftEmail(email) || looksLikeSuspiciousGmailDotEmail(email)
+}
+
+func isSuspectedBulkSignup(email, currentIP, currentUserAgent string, observations []signupAuditObservation) bool {
+	if !looksLikeGeneratedSignupEmail(email) {
+		return false
+	}
+	currentNetwork, ok := signupNetwork(currentIP)
+	if !ok || strings.TrimSpace(currentUserAgent) == "" {
+		return false
+	}
+
+	sameNetwork := 0
+	sameFingerprint := 0
+	sameUserAgent := 0
+	for _, observation := range observations {
+		if strings.TrimSpace(observation.UserAgent) == strings.TrimSpace(currentUserAgent) {
+			sameUserAgent++
+		}
+		network, valid := signupNetwork(observation.IP)
+		if !valid || network != currentNetwork {
+			continue
+		}
+		sameNetwork++
+		if strings.TrimSpace(observation.UserAgent) == strings.TrimSpace(currentUserAgent) {
+			sameFingerprint++
+		}
+	}
+	if looksLikeSuspiciousGmailDotEmail(email) && sameFingerprint >= 1 {
+		return true
+	}
+	return (sameNetwork >= 2 && sameFingerprint >= 1) || sameUserAgent >= 2
+}
+
+func signupNetwork(value string) (netip.Prefix, bool) {
+	addr, err := netip.ParseAddr(strings.TrimSpace(value))
+	if err != nil {
+		return netip.Prefix{}, false
+	}
+	addr = addr.Unmap()
+	bits := 64
+	if addr.Is4() {
+		bits = 24
+	}
+	return netip.PrefixFrom(addr, bits).Masked(), true
+}
+
 // SendVerifyCodeResult 发送验证码返回结果
 type SendVerifyCodeResult struct {
 	Countdown int `json:"countdown"` // 倒计时秒数
@@ -320,6 +495,14 @@ func (s *AuthService) SendVerifyCode(ctx context.Context, email string, locale .
 	if isReservedEmail(email) {
 		return ErrEmailReserved
 	}
+	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
+		return err
+	}
+	if blocked, reason := s.isSignupRiskBlocked(ctx, email); blocked {
+		logger.LegacyPrintf("service.auth", "[Auth] Blocking suspected bulk verification request: reason=%s", reason)
+		return ErrRegistrationRateLimited
+	}
+
 	// 检查邮箱是否已存在（含 +别名 / Gmail 点号变体归一化，防止单个收件箱批量派生注册）
 	existsEmail, err := s.existsByEmailOrAlias(ctx, email)
 	if err != nil {
@@ -360,6 +543,14 @@ func (s *AuthService) SendVerifyCodeAsync(ctx context.Context, email string, loc
 	if isReservedEmail(email) {
 		return nil, ErrEmailReserved
 	}
+	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
+		return nil, err
+	}
+	if blocked, reason := s.isSignupRiskBlocked(ctx, email); blocked {
+		logger.LegacyPrintf("service.auth", "[Auth] Blocking suspected bulk verification request: reason=%s", reason)
+		return nil, ErrRegistrationRateLimited
+	}
+
 	// 检查邮箱是否已存在（含 +别名 / Gmail 点号变体归一化；在发信前拦截，避免批量脚本消耗发信配额）
 	existsEmail, err := s.existsByEmailOrAlias(ctx, email)
 	if err != nil {
@@ -624,6 +815,7 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 				RPMLimit:     defaultRPMLimit,
 				Status:       StatusActive,
 				SignupSource: signupSource,
+				SignupIP:     signupIPFromContext(ctx),
 			}
 
 			if err := s.userRepo.Create(ctx, newUser); err != nil {
@@ -776,6 +968,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				RPMLimit:     defaultRPMLimit,
 				Status:       StatusActive,
 				SignupSource: signupSource,
+				SignupIP:     signupIPFromContext(ctx),
 			}
 
 			if s.entClient != nil && invitationRedeemCode != nil {
@@ -1208,6 +1401,9 @@ func inferLegacySignupSource(email string) string {
 }
 
 func (s *AuthService) validateRegistrationEmailPolicy(ctx context.Context, email string) error {
+	if HasRegistrationEmailSubaddressTag(email) {
+		return ErrEmailSubaddressNotAllowed
+	}
 	if s.settingService == nil {
 		return nil
 	}

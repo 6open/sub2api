@@ -5,7 +5,7 @@
     </label>
     <div
       data-testid="payment-method-grid"
-      class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+      :class="['grid gap-3 sm:flex', sortedMethods.length === 1 ? 'grid-cols-1' : 'grid-cols-2']"
     >
       <button
         v-for="method in sortedMethods"

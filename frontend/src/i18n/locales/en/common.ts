@@ -160,6 +160,8 @@ export default {
     dashboard: 'Dashboard',
     announcements: 'Announcements',
     apiKeys: 'API Keys',
+    aiChat: 'AI Chat / Image Design',
+    aiChatOpenFailed: 'Unable to open AI Chat. Please try again.',
     batchImage: 'Batch Images',
     usage: 'Usage',
     redeem: 'Redeem',
@@ -244,6 +246,7 @@ export default {
     registrationFailed: 'Registration failed. Please try again.',
     emailDomainRegistrationLimit:
       'This email domain cannot register another account. Please use a mainstream email, or contact support to add your enterprise domain to the allowlist.',
+    emailSubaddressNotAllowed: 'Plus-address email aliases are not allowed. Use your original email address.',
     emailSuffixNotAllowed: 'This email domain is not allowed for registration.',
     emailSuffixNotAllowedWithAllowed:
       'This email domain is not allowed. Allowed domains: {suffixes}',

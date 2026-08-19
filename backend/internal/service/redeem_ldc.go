@@ -16,7 +16,7 @@ const (
 	ldcCodeKind      = "ldc"
 	ldcPromoUSDLimit = 10.0
 	ldcPromoRate     = 10.0
-	ldcNormalRate    = 20.0
+	ldcNormalRate    = 50.0
 )
 
 type ldcCodeMetadata struct {

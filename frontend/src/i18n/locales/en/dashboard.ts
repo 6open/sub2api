@@ -654,7 +654,7 @@ export default {
     codeTypeTipTitle: 'Redeem code type notes',
     generalCodeTip: 'General codes: add balance, concurrency, or subscriptions directly by the code value.',
     ldcCodeTip:
-      "LDC codes: converted by this lklb account's LDC redemption tiers. The first $10 uses 10 LDC = $1, and the excess uses 20 LDC = $1.",
+      "LDC codes: converted by this lklb account's LDC redemption tiers. The first $10 uses 10 LDC = $1, and the excess uses 50 LDC = $1.",
     recentActivity: 'Recent Activity',
     historyWillAppear: 'Your redemption history will appear here',
     balanceAddedRedeem: 'Balance Added (Redeem)',

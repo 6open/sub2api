@@ -72,3 +72,10 @@ func TestRegistrationEmailDomainUsesRegistrableDomain(t *testing.T) {
 	require.Equal(t, "example.com", RegistrationEmailDomain("user@example.com."))
 	require.Equal(t, "example.com", RegistrationEmailDomain("user@team.example.com."))
 }
+
+func TestHasRegistrationEmailSubaddressTag(t *testing.T) {
+	require.True(t, HasRegistrationEmailSubaddressTag("user+promo@example.com"))
+	require.True(t, HasRegistrationEmailSubaddressTag(" USER+PROMO@EXAMPLE.COM "))
+	require.False(t, HasRegistrationEmailSubaddressTag("user@example.com"))
+	require.False(t, HasRegistrationEmailSubaddressTag("invalid+address"))
+}

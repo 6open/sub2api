@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import base64
+import fcntl
 import hashlib
 import hmac
 import json
@@ -13,6 +14,15 @@ import urllib.request
 
 CONFIG_PATH = "/etc/sub2api-feishu-monitor/config.json"
 STATE_PATH = "/var/lib/sub2api-feishu-monitor/state.json"
+NOTIFICATION_RATE_STATE_PATH = "/var/lib/sub2api-feishu-monitor/notification-rate-limit.json"
+
+CATEGORY_STYLES = {
+    "error": ("🔴", "错误"),
+    "warning": ("🟠", "警告"),
+    "reminder": ("🟡", "提醒"),
+    "normal": ("🟢", "正常"),
+}
+CATEGORY_PRIORITY = {"normal": 0, "reminder": 1, "warning": 2, "error": 3}
 
 
 def load_json(path, default):
@@ -30,6 +40,15 @@ def save_json(path, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
         f.write("\n")
     os.replace(tmp, path)
+
+
+def notification_category(items, fallback="warning"):
+    categories = [
+        item.get("category", fallback)
+        for item in items
+        if item.get("category", fallback) in CATEGORY_STYLES
+    ]
+    return max(categories or [fallback], key=lambda value: CATEGORY_PRIORITY[value])
 
 
 def run(cmd):
@@ -303,12 +322,14 @@ def probe_network(config, state):
     if network_state.get("fail_count", 0) >= fail_threshold:
         issues.append({
             "key": "network_fail",
+            "category": "error",
             "title": "代理网络连续失败",
             "body": f"7890 到 OpenAI 连续失败 {network_state.get('fail_count')} 次，status={status}，error={error[-180:] or '无'}",
         })
     if network_state.get("slow_count", 0) >= slow_threshold:
         issues.append({
             "key": "network_slow",
+            "category": "warning",
             "title": "代理网络持续变慢",
             "body": f"7890 到 OpenAI 连续 {network_state.get('slow_count')} 次超过 {slow_ms}ms，本次 {latency_ms}ms，status={status}",
         })
@@ -325,6 +346,7 @@ def build_issues(config):
     if not active:
         issues.append({
             "key": "no_schedulable_account",
+            "category": "error",
             "title": "sub2api 无可调度账号",
             "body": "gpt20x 分组当前没有 active 且 schedulable=true 的账号。",
         })
@@ -341,6 +363,7 @@ def build_issues(config):
         if status != "active" or schedulable is not True or auth_bad:
             issues.append({
                 "key": f"account_{account.get('id')}_{status}_{schedulable}_{hashlib.sha1(message.encode()).hexdigest()[:8]}",
+                "category": "warning",
                 "title": f"账号异常：{account.get('name')}",
                 "body": f"status={status}, schedulable={schedulable}, error={message or '无'}",
             })
@@ -355,6 +378,7 @@ def build_issues(config):
         fingerprint = hashlib.sha1(title.encode()).hexdigest()[:10]
         issues.append({
             "key": f"rule_alert_{fingerprint}",
+            "category": "error",
             "title": title,
             "body": alert.get("body") or alert.get("description") or "",
         })
@@ -363,6 +387,7 @@ def build_issues(config):
         for alert in get_recent_bad_events(config.get("recent_alert_minutes", 10)):
             issues.append({
                 "key": f"recent_alert_{alert.get('id')}",
+                "category": "reminder",
                 "title": alert.get("title") or "sub2api 最近告警",
                 "body": alert.get("description") or "",
             })
@@ -376,12 +401,14 @@ def sign(secret, timestamp):
     return base64.b64encode(digest).decode("utf-8")
 
 
-def send_feishu(config, issues):
-    timestamp = str(int(time.time()))
+def send_feishu(config, issues, category=None):
+    category = category or notification_category(issues)
+    icon, category_label = CATEGORY_STYLES[category]
+    now = int(time.time())
+    timestamp = str(now)
     service_label = config.get("service_label", "sub2api")
-    service_symbol = config.get("service_symbol", "🔔")
     lines = [
-        f"{service_symbol} {service_label} 告警",
+        f"{icon} {category_label}｜{service_label}",
         "",
         f"时间：{time.strftime('%Y-%m-%d %H:%M:%S %z')}",
     ]
@@ -400,19 +427,41 @@ def send_feishu(config, issues):
     if secret:
         payload["sign"] = sign(secret, timestamp)
 
-    req = urllib.request.Request(
-        config["webhook"],
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
+    rate_state_path = config.get(
+        "notification_rate_limit_state_path", NOTIFICATION_RATE_STATE_PATH
     )
-    with urllib.request.urlopen(req, timeout=10) as response:
-        body = response.read().decode("utf-8", "replace")
-        if response.status >= 300:
-            raise RuntimeError(body)
-        data = json.loads(body)
-        if data.get("code") != 0:
-            raise RuntimeError(body)
+    interval = max(60, int(config.get("non_normal_min_interval_seconds", 60)))
+    os.makedirs(os.path.dirname(rate_state_path), exist_ok=True)
+    with open(f"{rate_state_path}.lock", "a+", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        rate_state = load_json(rate_state_path, {})
+        last_sent_at = int(rate_state.get("last_non_normal_sent_at", 0))
+        if category != "normal" and now - last_sent_at < interval:
+            wait_seconds = interval - (now - last_sent_at)
+            print(f"defer {category} notification for {wait_seconds}s due to rate limit")
+            return False
+
+        req = urllib.request.Request(
+            config["webhook"],
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            body = response.read().decode("utf-8", "replace")
+            if response.status >= 300:
+                raise RuntimeError(body)
+            data = json.loads(body)
+            if data.get("code") != 0:
+                raise RuntimeError(body)
+
+        if category != "normal":
+            save_json(rate_state_path, {
+                "last_non_normal_sent_at": now,
+                "last_category": category,
+                "last_service": service_label,
+            })
+        return True
 
 
 def main():
@@ -439,17 +488,28 @@ def main():
     sendable = [issue for issue in issues if issue["key"] not in previous_keys]
     resolved = [
         {
+            "category": "normal",
             "title": f"已恢复：{previous_titles.get(key, key)}",
             "body": "该异常已不再出现。",
         }
         for key in sorted(previous_keys - current_keys)
     ]
 
-    if sendable or resolved:
-        send_feishu(config, sendable + resolved)
+    tracked_keys = set(previous_keys)
+    tracked_titles = dict(previous_titles)
+    if resolved:
+        send_feishu(config, resolved, category="normal")
+        for key in previous_keys - current_keys:
+            tracked_keys.discard(key)
+            tracked_titles.pop(key, None)
 
-    state["active_issue_keys"] = sorted(current_keys)
-    state["active_issue_titles"] = current_titles
+    if sendable and send_feishu(config, sendable):
+        for issue in sendable:
+            tracked_keys.add(issue["key"])
+            tracked_titles[issue["key"]] = issue["title"]
+
+    state["active_issue_keys"] = sorted(tracked_keys)
+    state["active_issue_titles"] = tracked_titles
     state["last_status"] = "alert" if current_keys else "ok"
     save_json(STATE_PATH, state)
 

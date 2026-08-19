@@ -705,6 +705,7 @@ export interface ApiKey {
   name: string
   group_id: number | null
   status: 'active' | 'inactive' | 'quota_exhausted' | 'expired'
+  is_open_webui_default: boolean
   ip_whitelist: string[]
   ip_blacklist: string[]
   last_used_at: string | null

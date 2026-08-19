@@ -55,11 +55,22 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	}
 	orderAmount := req.Amount
 	limitAmount := req.Amount
+	var pricingSnapshot map[string]any
 	if plan != nil {
 		orderAmount = plan.Price
 		limitAmount = plan.Price
 	} else if req.OrderType == payment.OrderTypeBalance {
-		orderAmount = calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
+		balancePackage, err := resolveBalancePackage(req.BalancePackageID, cfg.BalanceRechargeMultiplier)
+		if err != nil {
+			return nil, err
+		}
+		if balancePackage != nil {
+			orderAmount = balancePackage.CreditAmount
+			limitAmount = balancePackage.PayAmount
+			pricingSnapshot = buildBalancePackagePricingSnapshot(balancePackage)
+		} else {
+			orderAmount = calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
+		}
 	}
 	feeRate := cfg.RechargeFeeRate
 	methodCurrency := payment.DefaultPaymentCurrency
@@ -100,7 +111,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if oauthResp != nil {
 		return oauthResp, nil
 	}
-	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, sel)
+	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, pricingSnapshot, sel)
 	if err != nil {
 		return nil, err
 	}
@@ -119,12 +130,23 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}
 	if req.OrderType == payment.OrderTypeSubscription {
+		if strings.TrimSpace(req.BalancePackageID) != "" {
+			return nil, infraerrors.BadRequest("INVALID_BALANCE_PACKAGE", "balance packages cannot be used for subscription orders")
+		}
 		return s.validateSubOrder(ctx, req)
 	}
-	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
+	validationAmount := req.Amount
+	if strings.TrimSpace(req.BalancePackageID) != "" {
+		pkg, err := resolveBalancePackage(req.BalancePackageID, cfg.BalanceRechargeMultiplier)
+		if err != nil {
+			return nil, err
+		}
+		validationAmount = pkg.PayAmount
+	}
+	if math.IsNaN(validationAmount) || math.IsInf(validationAmount, 0) || validationAmount <= 0 {
 		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
 	}
-	if (cfg.MinAmount > 0 && req.Amount < cfg.MinAmount) || (cfg.MaxAmount > 0 && req.Amount > cfg.MaxAmount) {
+	if (cfg.MinAmount > 0 && validationAmount < cfg.MinAmount) || (cfg.MaxAmount > 0 && validationAmount > cfg.MaxAmount) {
 		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount out of range").
 			WithMetadata(map[string]string{"min": fmt.Sprintf("%.2f", cfg.MinAmount), "max": fmt.Sprintf("%.2f", cfg.MaxAmount)})
 	}
@@ -149,7 +171,7 @@ func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRe
 	return plan, nil
 }
 
-func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
+func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, pricingSnapshot map[string]any, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -205,6 +227,9 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	}
 	if providerSnapshot != nil {
 		b.SetProviderSnapshot(providerSnapshot)
+	}
+	if pricingSnapshot != nil {
+		b.SetPricingSnapshot(pricingSnapshot)
 	}
 	if plan != nil {
 		b.SetPlanID(plan.ID).SetSubscriptionGroupID(plan.GroupID).SetSubscriptionDays(psComputeValidityDays(plan.ValidityDays, plan.ValidityUnit))
@@ -435,7 +460,7 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 			}
 		}
 	}
-	providerReturnURL, err := buildPaymentReturnURL(canonicalReturnURL, order.ID, outTradeNo, resumeToken)
+	providerReturnURL, err := buildProviderPaymentReturnURL(sel.ProviderKey, canonicalReturnURL, order.ID, outTradeNo, resumeToken)
 	if err != nil {
 		return nil, err
 	}
@@ -469,12 +494,13 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		return nil, fmt.Errorf("update order with payment details: %w", err)
 	}
 	s.writeAuditLog(ctx, order.ID, "ORDER_CREATED", fmt.Sprintf("user:%d", req.UserID), map[string]any{
-		"paymentAmount":  req.Amount,
-		"creditedAmount": order.Amount,
-		"payAmount":      order.PayAmount,
-		"paymentType":    req.PaymentType,
-		"orderType":      req.OrderType,
-		"paymentSource":  NormalizePaymentSource(req.PaymentSource),
+		"paymentAmount":    req.Amount,
+		"creditedAmount":   order.Amount,
+		"payAmount":        order.PayAmount,
+		"paymentType":      req.PaymentType,
+		"orderType":        req.OrderType,
+		"paymentSource":    NormalizePaymentSource(req.PaymentSource),
+		"balancePackageID": strings.TrimSpace(req.BalancePackageID),
 	})
 	resultType := pr.ResultType
 	if resultType == "" {
@@ -769,6 +795,9 @@ func buildWeChatPaymentOAuthStartURL(req CreateOrderRequest, scope string) (stri
 	}
 	if req.PlanID > 0 {
 		q.Set("plan_id", strconv.FormatInt(req.PlanID, 10))
+	}
+	if packageID := strings.TrimSpace(req.BalancePackageID); packageID != "" {
+		q.Set("balance_package_id", packageID)
 	}
 	if scope = strings.TrimSpace(scope); scope != "" {
 		q.Set("scope", scope)

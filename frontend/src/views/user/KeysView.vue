@@ -123,6 +123,13 @@
           <template #cell-name="{ value, row }">
             <div class="flex items-center gap-1.5">
               <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <span
+                v-if="row.is_open_webui_default"
+                class="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-900/25 dark:text-emerald-300 dark:ring-emerald-800"
+              >
+                <Icon name="sparkles" size="xs" />
+                {{ t('keys.aiChatKey') }}
+              </span>
               <Icon
                 v-if="row.ip_whitelist?.length > 0 || row.ip_blacklist?.length > 0"
                 name="shield"
@@ -371,6 +378,20 @@
 
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1">
+              <button
+                @click="setOpenWebUIDefault(row)"
+                :disabled="row.is_open_webui_default || settingOpenWebUIKeyId === row.id"
+                :class="[
+                  'flex flex-col items-center gap-0.5 rounded-lg p-1.5 transition-colors disabled:cursor-default',
+                  row.is_open_webui_default
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-300'
+                    : 'text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400'
+                ]"
+                :title="row.is_open_webui_default ? t('keys.aiChatKeySelected') : t('keys.useForAIChat')"
+              >
+                <Icon :name="row.is_open_webui_default ? 'checkCircle' : 'sparkles'" size="sm" />
+                <span class="text-xs">{{ row.is_open_webui_default ? t('keys.selected') : t('keys.aiChat') }}</span>
+              </button>
               <!-- Use Key Button -->
               <button
                 @click="openUseKeyModal(row)"
@@ -1273,6 +1294,7 @@ const apiKeys = ref<ApiKey[]>([])
 const groups = ref<Group[]>([])
 const loading = ref(false)
 const submitting = ref(false)
+const settingOpenWebUIKeyId = ref<number | null>(null)
 const now = ref(new Date())
 let resetTimer: ReturnType<typeof setInterval> | null = null
 const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
@@ -1593,6 +1615,20 @@ const toggleKeyStatus = async (key: ApiKey) => {
     loadApiKeys()
   } catch (error) {
     appStore.showError(t('keys.failedToUpdateStatus'))
+  }
+}
+
+const setOpenWebUIDefault = async (key: ApiKey) => {
+  if (key.is_open_webui_default || settingOpenWebUIKeyId.value !== null) return
+  settingOpenWebUIKeyId.value = key.id
+  try {
+    await keysAPI.setOpenWebUIDefault(key.id)
+    appStore.showSuccess(t('keys.aiChatKeyUpdated'))
+    await loadApiKeys()
+  } catch (error) {
+    appStore.showError(t('keys.failedToUpdateAIChatKey'))
+  } finally {
+    settingOpenWebUIKeyId.value = null
   }
 }
 

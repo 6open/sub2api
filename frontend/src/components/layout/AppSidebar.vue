@@ -31,6 +31,28 @@
 
     <!-- Navigation -->
     <nav ref="sidebarNavRef" class="sidebar-nav scrollbar-hide">
+      <div class="sidebar-section">
+        <button
+          id="sidebar-open-webui"
+          type="button"
+          class="sidebar-link mb-1 w-full"
+          :class="{ 'sidebar-link-collapsed': sidebarCollapsed }"
+          :title="sidebarCollapsed ? t('nav.aiChat') : undefined"
+          :aria-label="t('nav.aiChat')"
+          :disabled="openWebUILaunching"
+          @click="openWebUI"
+        >
+          <AiChatIcon class="h-5 w-5 flex-shrink-0" :class="{ 'animate-pulse': openWebUILaunching }" />
+          <span
+            class="sidebar-label"
+            :class="{ 'sidebar-label-collapsed': sidebarCollapsed }"
+            :aria-hidden="sidebarCollapsed ? 'true' : 'false'"
+          >
+            {{ t('nav.aiChat') }}
+          </span>
+        </button>
+      </div>
+
       <!-- Admin View: Admin menu first, then personal menu -->
       <template v-if="isAdmin">
         <!-- Admin Section -->
@@ -197,6 +219,7 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { openWebUIAPI } from '@/api'
 
 interface NavItem {
   path: string
@@ -249,6 +272,7 @@ const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
 const sidebarNavRef = ref<HTMLElement | null>(null)
 const isDark = ref(document.documentElement.classList.contains('dark'))
+const openWebUILaunching = ref(false)
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 
@@ -307,6 +331,26 @@ const BatchImageIcon = {
           'stroke-linecap': 'round',
           'stroke-linejoin': 'round',
           d: 'M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z'
+        })
+      ]
+    )
+}
+
+const AiChatIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.75 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.75 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z'
+        }),
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M21 12c0 4.142-4.03 7.5-9 7.5a10.4 10.4 0 01-3.72-.672L3 20.25l1.52-3.8A6.84 6.84 0 013 12c0-4.142 4.03-7.5 9-7.5s9 3.358 9 7.5z'
         })
       ]
     )
@@ -783,7 +827,6 @@ const adminNavItems = computed((): NavItem[] => {
       ],
     },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
-    { path: '/admin/ldc-shop-orders', label: t('nav.ldcShopOrders'), icon: OrderIcon, hideInSimpleMode: true },
     { path: '/admin/promo-codes', label: t('nav.promoCodes'), icon: GiftIcon, hideInSimpleMode: true },
     {
       path: '/admin/affiliates',
@@ -808,6 +851,7 @@ const adminNavItems = computed((): NavItem[] => {
       children: [
         { path: '/admin/orders/dashboard', label: t('nav.paymentDashboard'), icon: ChartIcon },
         { path: '/admin/orders', label: t('nav.orderManagement'), icon: OrderIcon },
+        { path: '/admin/ldc-shop-orders', label: t('nav.ldcShopOrders'), icon: OrderIcon },
         { path: '/admin/orders/plans', label: t('nav.paymentPlans'), icon: CreditCardIcon },
       ],
     },
@@ -847,6 +891,22 @@ function toggleTheme() {
 
 function closeMobile() {
   appStore.setMobileOpen(false)
+}
+
+async function openWebUI() {
+  if (openWebUILaunching.value) return
+  openWebUILaunching.value = true
+  try {
+    const result = await openWebUIAPI.startHandoff()
+    const target = new URL(result.url)
+    if (target.protocol !== 'https:') {
+      throw new Error('Invalid Open WebUI URL')
+    }
+    window.location.assign(target.toString())
+  } catch {
+    appStore.showError(t('nav.aiChatOpenFailed'))
+    openWebUILaunching.value = false
+  }
 }
 
 function handleMenuItemClick(itemPath: string) {

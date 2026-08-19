@@ -55,7 +55,7 @@ func TestCoordinatorModesAndPriority(t *testing.T) {
 		{name: "off", mode: ModeOff, wantKind: DecisionAllow},
 		{name: "async only enqueues", mode: ModeAsync, wantKind: DecisionAllow, wantEnqueue: 1},
 		{name: "prompt block", mode: ModeBlocking, prompt: &PromptDecision{Kind: DecisionBlock}, wantKind: DecisionBlock, wantCode: ErrorCodeBlocked, wantEvaluation: 1},
-		{name: "prompt unavailable", mode: ModeBlocking, promptErr: errors.New("down"), wantKind: DecisionUnavailable, wantCode: ErrorCodeUnavailable, wantEvaluation: 1},
+		{name: "prompt unavailable fails open", mode: ModeBlocking, promptErr: errors.New("down"), wantKind: DecisionUnavailable, wantCode: ErrorCodeUnavailable, wantEvaluation: 1},
 		{name: "legacy wins both block", mode: ModeBlocking,
 			legacy: &LegacyDecision{Blocked: true, StatusCode: http.StatusForbidden, ErrorCode: "content_policy_violation", Message: "legacy"},
 			prompt: &PromptDecision{Kind: DecisionBlock}, wantKind: DecisionBlock, wantCode: "content_policy_violation", wantEvaluation: 1},
@@ -125,7 +125,12 @@ func TestCoordinatorBlockingPriorityCoversBothEngineDecisionMatrix(t *testing.T)
 				}
 				require.Equal(t, promptCase.wantKind, decision.Kind)
 				require.Equal(t, promptCase.wantCode, decision.ErrorCode)
-				require.Equal(t, promptCase.decision.AllowNextStage, decision.AllowNextStage)
+				if promptCase.name == "unavailable" || promptCase.name == "invalid" {
+					require.True(t, decision.AllowNextStage)
+					require.Equal(t, http.StatusOK, decision.HTTPStatus)
+				} else {
+					require.Equal(t, promptCase.decision.AllowNextStage, decision.AllowNextStage)
+				}
 			})
 		}
 	}

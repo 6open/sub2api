@@ -53,3 +53,23 @@ describe('AppSidebar header styles', () => {
     expect(sidebarBrandBlockMatch?.[0]).not.toContain('overflow: hidden;')
   })
 })
+
+describe('AppSidebar order navigation', () => {
+  it('groups LDC shop orders under order management', () => {
+    const orderGroup = componentSource.match(/path: '\/admin\/orders',[\s\S]*?children: \[([\s\S]*?)\n {6}\],/)
+
+    expect(orderGroup).not.toBeNull()
+    expect(orderGroup?.[1]).toContain("path: '/admin/ldc-shop-orders'")
+    expect(componentSource.match(/path: '\/admin\/ldc-shop-orders'/g)).toHaveLength(1)
+  })
+})
+
+describe('AppSidebar Open WebUI SSO entry', () => {
+  it('starts a server-issued handoff instead of exposing a key or access token', () => {
+    expect(componentSource).toContain('id="sidebar-open-webui"')
+    expect(componentSource).toContain('openWebUIAPI.startHandoff()')
+    expect(componentSource).toContain("window.location.assign(target.toString())")
+    expect(componentSource).not.toContain('auth_token=')
+    expect(componentSource).not.toContain('api_key=')
+  })
+})

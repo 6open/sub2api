@@ -72,6 +72,9 @@ func RegisterAuthRoutes(
 		auth.POST("/reset-password", rateLimiter.LimitWithOptions("reset-password", 10, time.Minute, middleware.RateLimitOptions{
 			FailureMode: middleware.RateLimitFailClose,
 		}), h.Auth.ResetPassword)
+		auth.POST("/open-webui/handoff/verify", rateLimiter.LimitWithOptions("open-webui-handoff-verify", 60, time.Minute, middleware.RateLimitOptions{
+			FailureMode: middleware.RateLimitFailClose,
+		}), h.Auth.VerifyOpenWebUIHandoff(redisClient))
 		auth.POST("/linuxdo-shop/handoff/verify", h.Auth.VerifyLinuxDoShopHandoff)
 		auth.GET("/oauth/linuxdo/start", h.Auth.LinuxDoOAuthStart)
 		auth.POST("/oauth/linuxdo/start", rateLimiter.LimitWithOptions("oauth-linuxdo-start", 20, time.Minute, middleware.RateLimitOptions{
@@ -256,6 +259,7 @@ func RegisterAuthRoutes(
 	authenticated.Use(panelRateLimiter.Global())
 	{
 		authenticated.GET("/auth/me", h.Auth.GetCurrentUser)
+		authenticated.POST("/auth/open-webui/handoff/start", h.Auth.StartOpenWebUIHandoff)
 		authenticated.POST("/auth/linuxdo-shop/handoff/start", h.Auth.StartLinuxDoShopHandoff)
 		// 撤销所有会话（需要认证）
 		authenticated.POST("/auth/revoke-all-sessions", h.Auth.RevokeAllSessions)

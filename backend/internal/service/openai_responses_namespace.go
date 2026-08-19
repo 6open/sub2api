@@ -123,7 +123,8 @@ func flattenOpenAIResponsesNamespaces(c *gin.Context, body []byte) ([]byte, erro
 	if err != nil {
 		return body, err
 	}
-	if !changed {
+	strippedInputNamespace := stripOpenAIResponsesInputNamespaces(requestBody["input"])
+	if !changed && !strippedInputNamespace {
 		return body, nil
 	}
 	rebuilt, err := marshalOpenAIUpstreamJSON(requestBody)

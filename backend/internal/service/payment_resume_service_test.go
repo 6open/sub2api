@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -187,6 +188,57 @@ func TestBuildPaymentReturnURLWithoutResumeTokenStillIncludesOutTradeNo(t *testi
 	}
 }
 
+func TestBuildProviderPaymentReturnURLEasyPayUsesSingleResumeParameter(t *testing.T) {
+	t.Parallel()
+
+	got, err := buildProviderPaymentReturnURL(
+		payment.TypeEasyPay,
+		"https://example.com/payment/result?from=checkout#fragment",
+		42,
+		"sub2_42",
+		"resume-token",
+	)
+	if err != nil {
+		t.Fatalf("buildProviderPaymentReturnURL returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("url.Parse returned error: %v", err)
+	}
+	query := parsed.Query()
+	if len(query) != 1 || query.Get("resume_token") != "resume-token" {
+		t.Fatalf("query = %#v, want only resume_token", query)
+	}
+	if strings.Contains(got, "&") {
+		t.Fatalf("EasyPay return URL contains a query separator: %q", got)
+	}
+}
+
+func TestBuildProviderPaymentReturnURLEasyPayFallsBackToSingleOrderID(t *testing.T) {
+	t.Parallel()
+
+	got, err := buildProviderPaymentReturnURL(
+		payment.TypeEasyPay,
+		"https://example.com/payment/result?from=checkout",
+		42,
+		"sub2_42",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("buildProviderPaymentReturnURL returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("url.Parse returned error: %v", err)
+	}
+	query := parsed.Query()
+	if len(query) != 1 || query.Get("order_id") != "42" {
+		t.Fatalf("query = %#v, want only order_id", query)
+	}
+}
+
 func TestBuildPaymentReturnURLEmptyBase(t *testing.T) {
 	t.Parallel()
 
@@ -277,14 +329,15 @@ func TestWeChatPaymentResumeTokenRoundTrip(t *testing.T) {
 
 	svc := NewPaymentResumeService([]byte("0123456789abcdef0123456789abcdef"))
 	token, err := svc.CreateWeChatPaymentResumeToken(WeChatPaymentResumeClaims{
-		OpenID:      "openid-123",
-		PaymentType: payment.TypeWxpay,
-		Amount:      "12.50",
-		OrderType:   payment.OrderTypeSubscription,
-		PlanID:      7,
-		RedirectTo:  "/purchase?from=wechat",
-		Scope:       "snsapi_base",
-		IssuedAt:    1234567890,
+		OpenID:           "openid-123",
+		PaymentType:      payment.TypeWxpay,
+		Amount:           "12.50",
+		OrderType:        payment.OrderTypeSubscription,
+		PlanID:           7,
+		BalancePackageID: "balance_200_170",
+		RedirectTo:       "/purchase?from=wechat",
+		Scope:            "snsapi_base",
+		IssuedAt:         1234567890,
 	})
 	if err != nil {
 		t.Fatalf("CreateWeChatPaymentResumeToken returned error: %v", err)
@@ -297,7 +350,7 @@ func TestWeChatPaymentResumeTokenRoundTrip(t *testing.T) {
 	if claims.OpenID != "openid-123" || claims.PaymentType != payment.TypeWxpay {
 		t.Fatalf("claims mismatch: %+v", claims)
 	}
-	if claims.Amount != "12.50" || claims.OrderType != payment.OrderTypeSubscription || claims.PlanID != 7 {
+	if claims.Amount != "12.50" || claims.OrderType != payment.OrderTypeSubscription || claims.PlanID != 7 || claims.BalancePackageID != "balance_200_170" {
 		t.Fatalf("claims payment context mismatch: %+v", claims)
 	}
 	if claims.RedirectTo != "/purchase?from=wechat" || claims.Scope != "snsapi_base" {

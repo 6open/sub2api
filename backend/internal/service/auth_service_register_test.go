@@ -332,6 +332,98 @@ func TestAuthService_Register_EmailVerifyEnabledButServiceNotConfigured(t *testi
 	require.ErrorIs(t, err, ErrServiceUnavailable)
 }
 
+func TestAuthService_Register_CapturesSignupIP(t *testing.T) {
+	repo := &userRepoStub{nextID: 1}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+	}, nil, nil)
+	ctx := WithSessionBinding(context.Background(), &SessionBinding{IP: "2001:0db8::1"})
+
+	_, user, err := service.Register(ctx, "user@test.com", "password")
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	require.Equal(t, "2001:db8::1", user.SignupIP)
+	require.Len(t, repo.created, 1)
+	require.Equal(t, "2001:db8::1", repo.created[0].SignupIP)
+}
+
+func TestSignupIPFromContextRejectsInvalidValue(t *testing.T) {
+	ctx := WithSessionBinding(context.Background(), &SessionBinding{IP: "not-an-ip"})
+	require.Empty(t, signupIPFromContext(ctx))
+}
+
+func TestLooksLikeGeneratedMicrosoftEmail(t *testing.T) {
+	require.True(t, looksLikeGeneratedMicrosoftEmail("debrawalker4434@outlook.com"))
+	require.True(t, looksLikeGeneratedMicrosoftEmail("charlesle3031@HOTMAIL.COM"))
+	require.False(t, looksLikeGeneratedMicrosoftEmail("person@outlook.com"))
+	require.False(t, looksLikeGeneratedMicrosoftEmail("ab12@outlook.com"))
+	require.False(t, looksLikeGeneratedMicrosoftEmail("debrawalker4434@gmail.com"))
+}
+
+func TestLooksLikeSuspiciousGmailDotEmail(t *testing.T) {
+	require.True(t, looksLikeSuspiciousGmailDotEmail("r.uth.t.o.ma.sj@gmail.com"))
+	require.True(t, looksLikeSuspiciousGmailDotEmail("samu.e.leru.tte.r.414@googlemail.com"))
+	require.True(t, looksLikeSuspiciousGmailDotEmail("t.ri.ck1.819.88@gmail.com"))
+	require.True(t, looksLikeSuspiciousGmailDotEmail("first.last@gmail.com"))
+	require.True(t, looksLikeSuspiciousGmailDotEmail("first.middle.last@gmail.com"))
+	require.False(t, looksLikeSuspiciousGmailDotEmail("firstlast@gmail.com"))
+	require.False(t, looksLikeSuspiciousGmailDotEmail("r.uth.t.o.ma.sj@example.com"))
+}
+
+func TestSignupRiskBlocksSuspiciousGmailWithoutPriorObservations(t *testing.T) {
+	blocked, reason := (&AuthService{}).isSignupRiskBlocked(context.Background(), "r.uth.t.o.ma.sj@gmail.com")
+	require.True(t, blocked)
+	require.Equal(t, "suspicious_gmail_dot_pattern", reason)
+}
+
+func TestSuspiciousGmailDotSignupBlocksRepeatedFingerprint(t *testing.T) {
+	const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124"
+	observations := []signupAuditObservation{{IP: "39.129.22.130", UserAgent: ua}}
+
+	require.True(t, isSuspectedBulkSignup("samu.e.leru.tte.r.414@gmail.com", "39.129.22.130", ua, observations))
+	require.True(t, isSuspectedBulkSignup("first.last@gmail.com", "39.129.22.130", ua, observations))
+	require.False(t, isSuspectedBulkSignup("samu.e.leru.tte.r.414@gmail.com", "39.129.23.130", ua, observations))
+}
+
+func TestIsSuspectedBulkSignup(t *testing.T) {
+	const ua = "Mozilla/5.0 (X11; Linux aarch64) Chrome/124"
+	observations := []signupAuditObservation{
+		{IP: "118.253.172.155", UserAgent: ua},
+		{IP: "118.253.172.160", UserAgent: "curl/8"},
+		{IP: "203.0.113.20", UserAgent: ua},
+	}
+
+	require.True(t, isSuspectedBulkSignup("debrawalker4434@outlook.com", "118.253.172.178", ua, observations))
+	require.False(t, isSuspectedBulkSignup("normal.user@outlook.com", "118.253.172.178", ua, observations))
+	require.True(t, isSuspectedBulkSignup("debrawalker4434@outlook.com", "118.253.173.178", ua, observations))
+	require.False(t, isSuspectedBulkSignup("debrawalker4434@outlook.com", "118.253.172.178", "new-agent", observations))
+}
+
+func TestIsSuspectedBulkSignupRequiresRepeatedUserAgentAcrossRotatingNetworks(t *testing.T) {
+	const ua = "Mozilla/5.0 (X11; Linux aarch64) Chrome/124"
+	observations := []signupAuditObservation{
+		{IP: "118.253.172.155", UserAgent: ua},
+		{IP: "108.248.72.201", UserAgent: ua},
+	}
+
+	require.True(t, isSuspectedBulkSignup("isabellaklein6588@outlook.com", "47.145.66.184", ua, observations))
+	require.False(t, isSuspectedBulkSignup("isabellaklein6588@outlook.com", "47.145.66.184", "different-agent", observations))
+}
+
+func TestSignupNetworkUsesIPv4Slash24AndIPv6Slash64(t *testing.T) {
+	v4a, ok := signupNetwork("118.253.172.155")
+	require.True(t, ok)
+	v4b, ok := signupNetwork("118.253.172.178")
+	require.True(t, ok)
+	require.Equal(t, v4a, v4b)
+
+	v6a, ok := signupNetwork("2001:db8:abcd:12::1")
+	require.True(t, ok)
+	v6b, ok := signupNetwork("2001:db8:abcd:12::ffff")
+	require.True(t, ok)
+	require.Equal(t, v6a, v6b)
+}
+
 func TestAuthService_Register_EmailVerifyRequired(t *testing.T) {
 	repo := &userRepoStub{}
 	cache := &emailCacheStub{} // 配置 emailService
@@ -528,6 +620,20 @@ func TestAuthService_Register_EmptyWhitelistAllowsAllDomains(t *testing.T) {
 
 	_, _, err := svc.Register(context.Background(), "any@custom.example", "password")
 	require.NoError(t, err)
+}
+
+func TestAuthService_Register_EmailSubaddressNotAllowed(t *testing.T) {
+	repo := &userRepoStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:              "true",
+		SettingKeyRegistrationEmailSuffixWhitelist: `["@outlook.com"]`,
+	}, nil, nil)
+
+	_, _, err := service.Register(context.Background(), "user+promo@outlook.com", "password")
+	require.ErrorIs(t, err, ErrEmailSubaddressNotAllowed)
+	appErr := infraerrors.FromError(err)
+	require.Equal(t, "EMAIL_SUBADDRESS_NOT_ALLOWED", appErr.Reason)
+	require.Empty(t, repo.created)
 }
 
 func TestAuthService_Register_EmailSuffixAllowed(t *testing.T) {

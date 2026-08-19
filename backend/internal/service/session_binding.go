@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"net"
 	"strings"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -50,6 +51,20 @@ func SessionBindingFromContext(ctx context.Context) *SessionBinding {
 	}
 	binding, _ := ctx.Value(sessionBindingCtxKey{}).(*SessionBinding)
 	return binding
+}
+
+// signupIPFromContext returns the normalized client IP captured by the HTTP
+// ingress middleware. Invalid or missing values are not persisted.
+func signupIPFromContext(ctx context.Context) string {
+	binding := SessionBindingFromContext(ctx)
+	if binding == nil {
+		return ""
+	}
+	parsed := net.ParseIP(strings.TrimSpace(binding.IP))
+	if parsed == nil {
+		return ""
+	}
+	return parsed.String()
 }
 
 // sessionBindingHashFromContext 提取指纹哈希，缺失时返回空串。

@@ -41,69 +41,46 @@
               <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
               <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
             </div>
-            <div class="rounded-3xl border border-sky-200 bg-gradient-to-r from-sky-50 via-white to-indigo-50 p-5 shadow-sm dark:border-sky-800/60 dark:from-sky-950/30 dark:via-dark-800 dark:to-indigo-950/20">
-              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p class="text-base font-bold text-gray-950 dark:text-white">link-lable交流群</p>
-                  <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">点击链接加入群聊，获取充值、兑换和使用帮助。</p>
-                </div>
-                <a
-                  class="btn btn-secondary inline-flex shrink-0 items-center justify-center rounded-2xl px-4 py-2"
-                  href="https://qm.qq.com/q/dqWgFGYbD2"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  点击链接加入群聊
-                </a>
-              </div>
-            </div>
-            <div class="grid gap-4 lg:grid-cols-2">
-              <div class="relative min-h-[210px] overflow-hidden rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-6 shadow-sm dark:border-emerald-800/60 dark:from-emerald-950/30 dark:via-dark-800 dark:to-cyan-950/20">
-                <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-300/20 blur-2xl"></div>
-                <div class="relative flex h-full flex-col justify-between gap-5 sm:flex-row sm:items-center">
-                  <div>
-                    <div class="mb-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200">LinuxDO 积分购买</div>
-                    <p class="text-2xl font-extrabold tracking-tight text-gray-950 dark:text-white">前 10刀额度享特惠</p>
-                    <p class="mt-2 text-base font-semibold text-emerald-700 dark:text-emerald-300">10 LDC = 1刀</p>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">超出后按 20 LDC = 1刀</p>
-                  </div>
-                  <button
-                    type="button"
-                    class="btn inline-flex shrink-0 items-center justify-center rounded-2xl px-5 py-3 text-base font-semibold shadow-lg shadow-emerald-500/20"
-                    @click="handleLinuxDoShopPurchase"
-                  >
-                    立即购买
-                  </button>
-                </div>
-              </div>
-              <div class="relative min-h-[210px] overflow-hidden rounded-3xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-rose-50 p-6 shadow-sm dark:border-orange-800/60 dark:from-orange-950/30 dark:via-dark-800 dark:to-rose-950/20">
-                <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-orange-300/20 blur-2xl"></div>
-                <div class="relative flex h-full flex-col justify-between gap-5 sm:flex-row sm:items-center">
-                  <div>
-                    <div class="mb-3 inline-flex rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700 dark:bg-orange-900/50 dark:text-orange-200">闲鱼客服购买</div>
-                    <p class="text-2xl font-extrabold tracking-tight text-gray-950 dark:text-white">闲鱼购买额度</p>
-                    <p class="mt-2 text-base font-semibold text-orange-700 dark:text-orange-300">支持多档额度</p>
-                    <p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">支持 1刀 / 5刀 / 10刀 等额度购买或续费。</p>
-                  </div>
-                  <a
-                    class="inline-flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-base font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:from-orange-600 hover:to-rose-600"
-                    href="https://m.tb.cn/h.8bWmQVo?tk=VCKygIjCm4N"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    前往闲鱼购买
-                  </a>
-                </div>
-              </div>
-            </div>
             <div v-if="enabledMethods.length === 0" class="card py-16 text-center">
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
-            <template v-else>
-            <div class="card p-6">
-              <AmountInput
-                v-model="amount"
-                :amounts="[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]"
+	            <template v-else>
+	            <div v-if="checkout.balance_packages.length > 0" class="card p-6">
+	              <div class="mb-4 flex items-center justify-between gap-3">
+	                <h2 class="text-sm font-semibold text-gray-900 dark:text-white">充值套餐</h2>
+	                <span class="text-xs text-gray-500 dark:text-gray-400">到账额度（美元）</span>
+	              </div>
+	              <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+	                <button
+	                  v-for="pkg in checkout.balance_packages"
+	                  :key="pkg.id"
+	                  type="button"
+	                  :class="[
+	                    'relative min-h-[108px] rounded-lg border p-4 text-left transition-colors',
+	                    selectedBalancePackage?.id === pkg.id
+	                      ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500 dark:bg-primary-950/30'
+	                      : 'border-gray-200 bg-white hover:border-primary-300 dark:border-dark-600 dark:bg-dark-800',
+	                  ]"
+	                  @click="selectBalancePackage(pkg)"
+	                >
+	                  <span v-if="pkg.badge" class="absolute right-3 top-3 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+	                    {{ pkg.badge === 'recommended' ? '推荐' : '最划算' }}
+	                  </span>
+	                  <span class="block text-2xl font-bold text-gray-950 dark:text-white">${{ pkg.credit_amount }}</span>
+	                  <span class="mt-2 block text-sm text-gray-500 dark:text-gray-400">
+	                    实付 <strong class="text-base text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(pkg.pay_amount) }}</strong>
+	                  </span>
+	                </button>
+	              </div>
+	              <button type="button" class="mt-3 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400" @click="selectCustomBalanceAmount">
+	                自定义充值（原价）
+	              </button>
+	            </div>
+	            <div v-if="!selectedBalancePackage" class="card p-6">
+	              <AmountInput
+	                v-model="amount"
+                :amounts="[1, 10, 100]"
+                :currency-symbol="selectedCurrencySymbol"
                 :min="globalMinAmount"
                 :max="globalMaxAmount"
               />
@@ -116,11 +93,11 @@
                 @select="selectedMethod = $event"
               />
             </div>
-            <div v-if="validAmount > 0" class="card p-6">
+	            <div v-if="balancePaymentBase > 0" class="card p-6">
               <div class="space-y-2 text-sm">
                 <div class="flex justify-between">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.paymentAmount') }}</span>
-                  <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(validAmount) }}</span>
+	                  <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(balancePaymentBase) }}</span>
                 </div>
                 <div v-if="feeRate > 0" class="flex justify-between">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
@@ -130,11 +107,11 @@
                   <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.actualPay') }}</span>
                   <span class="text-lg font-bold text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
                 </div>
-                <div v-if="balanceRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
+	                <div v-if="selectedBalancePackage || balanceRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
                   <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
                 </div>
-                <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
+	                <p v-if="!selectedBalancePackage && balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
                   {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
                 </p>
               </div>
@@ -147,6 +124,44 @@
               <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(totalAmount) }}</span>
             </button>
             </template>
+
+            <section class="card overflow-hidden">
+              <div class="card-header">
+                <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-200">其他购买方式</h2>
+              </div>
+              <div class="grid divide-y divide-gray-100 dark:divide-dark-700 lg:grid-cols-3 lg:divide-x lg:divide-y-0">
+                <div class="flex items-center gap-3 p-4">
+                  <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300">
+                    <Icon name="chat" size="sm" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-white">Link-Label 交流群</h3>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">充值与使用帮助</p>
+                  </div>
+                  <a class="btn btn-secondary btn-sm shrink-0" href="https://qm.qq.com/q/dqWgFGYbD2" target="_blank" rel="noopener noreferrer">加入</a>
+                </div>
+                <div class="flex items-center gap-3 p-4">
+                  <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300">
+                    <Icon name="dollar" size="sm" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-white">LinuxDO 积分购买</h3>
+                    <p class="mt-0.5 text-xs leading-5 text-gray-500 dark:text-gray-400">前 10刀额度享特惠：10 LDC = 1刀<br>超出后按 50 LDC = 1刀</p>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-sm shrink-0" @click="handleLinuxDoShopPurchase">购买</button>
+                </div>
+                <div class="flex items-center gap-3 p-4">
+                  <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600 dark:bg-orange-950/60 dark:text-orange-300">
+                    <Icon name="externalLink" size="sm" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-white">闲鱼购买额度</h3>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">支持 1刀 / 5刀 / 10刀</p>
+                  </div>
+                  <a class="btn btn-secondary btn-sm shrink-0" href="https://m.tb.cn/h.8ci78UP?tk=LUDdgttOFxf" target="_blank" rel="noopener noreferrer">购买</a>
+                </div>
+              </div>
+            </section>
           </template>
           <!-- Subscribe Tab -->
           <template v-else-if="activeTab === 'subscription'">
@@ -322,7 +337,7 @@ import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
-import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import type { BalancePackage, SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -380,6 +395,7 @@ const errorMessage = ref('')
 const errorHintMessage = ref('')
 const activeTab = ref<'recharge' | 'subscription'>('recharge')
 const amount = ref<number | null>(null)
+const selectedBalancePackage = ref<BalancePackage | null>(null)
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
@@ -392,6 +408,7 @@ interface CreateOrderOptions {
   paymentType?: string
   isResume?: boolean
   mobileQrFallbackAttempted?: boolean
+  balancePackageId?: string
 }
 
 interface WeixinJSBridgeLike {
@@ -558,7 +575,7 @@ function onPaymentSettled() {
 // All checkout data from single API call
 const checkout = ref<CheckoutInfoResponse>({
   methods: {}, global_min: 0, global_max: 0,
-  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '', balance_packages: [],
 })
 
 const tabs = computed(() => {
@@ -580,7 +597,18 @@ const subscriptionUsdToCnyRate = computed(() => {
   const rate = checkout.value.subscription_usd_to_cny_rate
   return Number.isFinite(rate) && rate > 0 ? rate : 0
 })
-const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
+const balancePaymentBase = computed(() => selectedBalancePackage.value?.pay_amount ?? validAmount.value)
+const creditedAmount = computed(() => selectedBalancePackage.value?.credit_amount
+  ?? Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
+
+function selectBalancePackage(pkg: BalancePackage) {
+  selectedBalancePackage.value = pkg
+  amount.value = null
+}
+
+function selectCustomBalanceAmount() {
+  selectedBalancePackage.value = null
+}
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
 const planGridClass = computed(() => {
@@ -623,6 +651,17 @@ const localeCode = computed(() => {
     return String((raw as { value?: string }).value || '')
   }
   return undefined
+})
+const selectedCurrencySymbol = computed(() => {
+  try {
+    return new Intl.NumberFormat(localeCode.value, {
+      style: 'currency',
+      currency: selectedCurrency.value,
+      currencyDisplay: 'narrowSymbol',
+    }).formatToParts(0).find(part => part.type === 'currency')?.value || selectedCurrency.value
+  } catch {
+    return selectedCurrency.value
+  }
 })
 
 function currencyFractionDigits(currency: string): number {
@@ -669,41 +708,41 @@ const methodOptions = computed<PaymentMethodOption[]>(() =>
       type,
       display_name: ml?.display_name,
       fee_rate: ml?.fee_rate ?? 0,
-      available: ml?.available !== false && amountFitsMethod(validAmount.value, type),
+      available: ml?.available !== false && amountFitsMethod(balancePaymentBase.value, type),
     }
   })
 )
 
 const feeRate = computed(() => checkout.value?.recharge_fee_rate ?? 0)
 const feeAmount = computed(() =>
-  feeRate.value > 0 && validAmount.value > 0
-    ? Math.ceil(((validAmount.value * feeRate.value) / 100) * 100) / 100
+  feeRate.value > 0 && balancePaymentBase.value > 0
+    ? Math.ceil(((balancePaymentBase.value * feeRate.value) / 100) * 100) / 100
     : 0
 )
 const totalAmount = computed(() =>
-  feeRate.value > 0 && validAmount.value > 0
-    ? Math.round((validAmount.value + feeAmount.value) * 100) / 100
-    : validAmount.value
+  feeRate.value > 0 && balancePaymentBase.value > 0
+    ? Math.round((balancePaymentBase.value + feeAmount.value) * 100) / 100
+    : balancePaymentBase.value
 )
 
 const amountError = computed(() => {
-  if (validAmount.value <= 0) return ''
+  if (balancePaymentBase.value <= 0) return ''
   // No method can handle this amount
-  if (!enabledMethods.value.some((m) => amountFitsMethod(validAmount.value, m))) {
+  if (!enabledMethods.value.some((m) => amountFitsMethod(balancePaymentBase.value, m))) {
     return t('payment.amountNoMethod')
   }
   // Selected method can't handle this amount (but others can)
   const ml = selectedLimit.value
   if (ml) {
-    if (ml.single_min > 0 && validAmount.value < ml.single_min) return t('payment.amountTooLow', { min: formatSelectedPaymentAmount(ml.single_min) })
-    if (ml.single_max > 0 && validAmount.value > ml.single_max) return t('payment.amountTooHigh', { max: formatSelectedPaymentAmount(ml.single_max) })
+    if (ml.single_min > 0 && balancePaymentBase.value < ml.single_min) return t('payment.amountTooLow', { min: formatSelectedPaymentAmount(ml.single_min) })
+    if (ml.single_max > 0 && balancePaymentBase.value > ml.single_max) return t('payment.amountTooHigh', { max: formatSelectedPaymentAmount(ml.single_max) })
   }
   return ''
 })
 
 const canSubmit = computed(() =>
-  validAmount.value > 0
-    && amountFitsMethod(validAmount.value, selectedMethod.value)
+  balancePaymentBase.value > 0
+    && amountFitsMethod(balancePaymentBase.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
 )
 
@@ -834,7 +873,7 @@ async function handleLinuxDoShopPurchase() {
 
 async function handleSubmitRecharge() {
   if (!canSubmit.value || submitting.value) return
-  await createOrder(validAmount.value, 'balance')
+  await createOrder(balancePaymentBase.value, 'balance', undefined, { balancePackageId: selectedBalancePackage.value?.id })
 }
 
 async function confirmSubscribe() {
@@ -853,6 +892,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       paymentType: requestType,
       orderType,
       planId,
+      balancePackageId: options.balancePackageId,
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: isMobileDevice(),
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
@@ -1235,7 +1275,7 @@ onMounted(async () => {
     // the Xianyu quota purchase entry is static and does not depend on checkout APIs.
     checkout.value = {
       methods: {}, global_min: 0, global_max: 0,
-      plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+	      plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '', balance_packages: [],
     }
   }
   finally { loading.value = false }

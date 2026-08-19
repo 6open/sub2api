@@ -170,7 +170,7 @@ func TestBatchImagePromptGuardRunsBeforePersistenceOrBilling(t *testing.T) {
 	require.NotContains(t, string(requests[0].Body), "QklOQVJZX0NBTkFSWQ==")
 }
 
-func TestSecurityAuditBlockingFailuresLeaveAllDownstreamCountersAtZero(t *testing.T) {
+func TestSecurityAuditBlockingFailurePolicyControlsDownstreamDispatch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, kind := range []securityaudit.DecisionKind{securityaudit.DecisionBlock, securityaudit.DecisionUnavailable, securityaudit.DecisionInvalid} {
 		t.Run(string(kind), func(t *testing.T) {
@@ -187,7 +187,6 @@ func TestSecurityAuditBlockingFailuresLeaveAllDownstreamCountersAtZero(t *testin
 			subject := middleware2.AuthSubject{UserID: 7, Concurrency: 2}
 			decision := runSecurityAudit(c, nil, coordinator, nil, apiKey, subject, service.ContentModerationProtocolOpenAIChat, "gpt-test", []byte(`{"messages":[{"role":"user","content":"guard me"}]}`), "http")
 			require.NotNil(t, decision)
-			require.False(t, decision.AllowNextStage)
 			require.False(t, recorder.Result().Header.Get("Content-Type") != "", "Guard evaluation itself must not start SSE/HTTP output")
 
 			accountSelections, billingChecks, billingPreconsumes, upstreamDispatches := 0, 0, 0, 0
@@ -197,12 +196,23 @@ func TestSecurityAuditBlockingFailuresLeaveAllDownstreamCountersAtZero(t *testin
 				billingPreconsumes++
 				upstreamDispatches++
 			}
-			require.Zero(t, accountSelections)
-			require.Zero(t, billingChecks)
-			require.Zero(t, billingPreconsumes)
-			require.Zero(t, upstreamDispatches)
-			(&OpenAIGatewayHandler{}).openAISecurityAuditError(c, decision)
-			require.Equal(t, promptDecision.HTTPStatus, recorder.Code)
+			if kind == securityaudit.DecisionBlock {
+				require.False(t, decision.AllowNextStage)
+				require.Zero(t, accountSelections)
+				require.Zero(t, billingChecks)
+				require.Zero(t, billingPreconsumes)
+				require.Zero(t, upstreamDispatches)
+				(&OpenAIGatewayHandler{}).openAISecurityAuditError(c, decision)
+				require.Equal(t, promptDecision.HTTPStatus, recorder.Code)
+				return
+			}
+
+			require.True(t, decision.AllowNextStage)
+			require.Equal(t, 1, accountSelections)
+			require.Equal(t, 1, billingChecks)
+			require.Equal(t, 1, billingPreconsumes)
+			require.Equal(t, 1, upstreamDispatches)
+			require.Equal(t, http.StatusOK, recorder.Code)
 		})
 	}
 }

@@ -4,11 +4,14 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -23,6 +26,46 @@ func TestCachesSecurityAuditCompletionSkipsWebSocketStages(t *testing.T) {
 	require.True(t, isSecurityAuditWebSocketStage("first_turn"))
 	require.True(t, isSecurityAuditWebSocketStage("subsequent_turn"))
 	require.False(t, isSecurityAuditWebSocketStage("http"))
+}
+
+func TestValidInternalSecurityAuditBypass(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	secret := "0123456789abcdef0123456789abcdef"
+	t.Setenv("PROMPT_AUDIT_INTERNAL_BYPASS_SECRET", secret)
+	t.Setenv("PROMPT_AUDIT_INTERNAL_API_KEY_ID", "9001")
+	serviceKey := &service.APIKey{ID: 9001}
+
+	newContext := func(value string) *gin.Context {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		if value != "" {
+			c.Request.Header.Set(internalSecurityAuditBypassHeader, value)
+		}
+		return c
+	}
+
+	require.True(t, validInternalSecurityAuditBypass(newContext(secret), serviceKey))
+	require.False(t, validInternalSecurityAuditBypass(newContext(secret), &service.APIKey{ID: 9002}))
+	require.False(t, validInternalSecurityAuditBypass(newContext("wrong"), serviceKey))
+	require.False(t, validInternalSecurityAuditBypass(newContext(""), serviceKey))
+	t.Setenv("PROMPT_AUDIT_INTERNAL_BYPASS_SECRET", "short")
+	require.False(t, validInternalSecurityAuditBypass(newContext("short"), serviceKey))
+}
+
+func TestValidInternalSecurityAuditBypassFromFile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("PROMPT_AUDIT_INTERNAL_BYPASS_SECRET", "")
+	t.Setenv("PROMPT_AUDIT_INTERNAL_API_KEY_ID", "")
+	secret := "abcdef0123456789abcdef0123456789"
+	path := filepath.Join(t.TempDir(), "bypass.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"secret":"`+secret+`","api_key_id":77}`), 0o600))
+	t.Setenv("PROMPT_AUDIT_INTERNAL_BYPASS_FILE", path)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Request.Header.Set(internalSecurityAuditBypassHeader, secret)
+	require.True(t, validInternalSecurityAuditBypass(c, &service.APIKey{ID: 77}))
+	require.False(t, validInternalSecurityAuditBypass(c, &service.APIKey{ID: 78}))
 }
 
 func TestRunSecurityAuditDoesNotSkipSubsequentWebSocketTurns(t *testing.T) {
