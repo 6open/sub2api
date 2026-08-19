@@ -126,6 +126,7 @@ func TestOpenAIResponsesCompactionRoutingFlags(t *testing.T) {
 		wantLegacyAfter     bool
 		wantNativeAfter     bool
 		wantCapabilityAfter service.OpenAIEndpointCapability
+		wantRequireCompact  bool
 		wantPathAfter       string
 		wantBodyUnchanged   bool
 	}{
@@ -138,6 +139,7 @@ func TestOpenAIResponsesCompactionRoutingFlags(t *testing.T) {
 			wantLegacyAfter:     false,
 			wantNativeAfter:     true,
 			wantCapabilityAfter: service.OpenAIEndpointCapabilityResponses,
+			wantRequireCompact:  true,
 			wantPathAfter:       "/v1/responses",
 			wantBodyUnchanged:   true,
 		},
@@ -150,6 +152,7 @@ func TestOpenAIResponsesCompactionRoutingFlags(t *testing.T) {
 			wantLegacyAfter:     false,
 			wantNativeAfter:     false,
 			wantCapabilityAfter: service.OpenAIEndpointCapabilityChatCompletions,
+			wantRequireCompact:  false,
 			wantPathAfter:       "/v1/responses",
 			wantBodyUnchanged:   true,
 		},
@@ -162,6 +165,7 @@ func TestOpenAIResponsesCompactionRoutingFlags(t *testing.T) {
 			wantLegacyAfter:     true,
 			wantNativeAfter:     false,
 			wantCapabilityAfter: service.OpenAIEndpointCapabilityResponses,
+			wantRequireCompact:  true,
 			wantPathAfter:       "/v1/responses/compact",
 		},
 		{
@@ -173,6 +177,7 @@ func TestOpenAIResponsesCompactionRoutingFlags(t *testing.T) {
 			wantLegacyAfter:     true,
 			wantNativeAfter:     false,
 			wantCapabilityAfter: service.OpenAIEndpointCapabilityResponses,
+			wantRequireCompact:  true,
 			wantPathAfter:       "/v1/responses/compact/detail",
 		},
 		{
@@ -184,6 +189,7 @@ func TestOpenAIResponsesCompactionRoutingFlags(t *testing.T) {
 			wantLegacyAfter:     false,
 			wantNativeAfter:     false,
 			wantCapabilityAfter: service.OpenAIEndpointCapabilityChatCompletions,
+			wantRequireCompact:  false,
 			wantPathAfter:       "/v1/responses/resp_123/responses",
 			wantBodyUnchanged:   true,
 		},
@@ -196,6 +202,7 @@ func TestOpenAIResponsesCompactionRoutingFlags(t *testing.T) {
 			wantLegacyAfter:     true,
 			wantNativeAfter:     false,
 			wantCapabilityAfter: service.OpenAIEndpointCapabilityResponses,
+			wantRequireCompact:  true,
 			wantPathAfter:       "/v1/responses/compact",
 		},
 		{
@@ -207,6 +214,7 @@ func TestOpenAIResponsesCompactionRoutingFlags(t *testing.T) {
 			wantLegacyAfter:     true,
 			wantNativeAfter:     false,
 			wantCapabilityAfter: service.OpenAIEndpointCapabilityResponses,
+			wantRequireCompact:  true,
 			wantPathAfter:       "/v1/responses/compact",
 		},
 	}
@@ -227,6 +235,8 @@ func TestOpenAIResponsesCompactionRoutingFlags(t *testing.T) {
 			require.Equal(t, tt.wantNativeAfter, nativeAfter)
 			require.Equal(t, tt.wantCapabilityAfter,
 				openAIResponsesRequiredCapabilityForRequest(false, nativeAfter || legacyAfter, service.PlatformOpenAI))
+			require.Equal(t, tt.wantRequireCompact,
+				openAIResponsesRequiresCompactAccount(legacyAfter, nativeAfter))
 			if tt.wantBodyUnchanged {
 				require.Equal(t, tt.body, normalized)
 			}

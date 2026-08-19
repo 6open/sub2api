@@ -454,7 +454,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	if h.rejectIfCyberSessionBlocked(c, apiKey, sessionHashBody, reqModel, cyberBlockFormatResponses) {
 		return
 	}
-	requireCompact := legacyCompact
+	// Native remote_compaction_v2 stays on /responses, but it has the same
+	// account capability requirement as the legacy /responses/compact path.
+	requireCompact := openAIResponsesRequiresCompactAccount(legacyCompact, nativeV2)
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
@@ -514,7 +516,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if len(failedAccountIDs) == 0 {
-				if legacyCompact && errors.Is(err, service.ErrNoAvailableCompactAccounts) {
+				if requireCompact && errors.Is(err, service.ErrNoAvailableCompactAccounts) {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available accounts support /responses/compact", streamStarted)
 					return
@@ -799,6 +801,10 @@ func isBareOpenAIResponsesPath(c *gin.Context) bool {
 func isOpenAIRemoteCompactionV2Request(body []byte) bool {
 	stream, valid := parseOpenAICompatibleStream(body)
 	return valid && stream && service.HasCompactionTriggerInInput(body)
+}
+
+func openAIResponsesRequiresCompactAccount(legacyCompact, nativeV2 bool) bool {
+	return legacyCompact || nativeV2
 }
 
 // normalizeOpenAIResponsesCompactRequest keeps Codex remote compaction v2 on
