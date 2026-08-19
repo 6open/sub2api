@@ -58,7 +58,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if toolSchemaSanitized {
 		body = sanitizedToolBody
 	}
-	if account.IsOpenAIOAuth() && isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) {
+	if account.IsOpenAI() && isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) {
 		liteBody, changed, liteErr := normalizeOpenAIResponsesLiteToolsPayload(body)
 		if liteErr != nil {
 			setOpsUpstreamError(c, http.StatusBadRequest, liteErr.Error(), "")

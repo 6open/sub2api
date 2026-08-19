@@ -306,6 +306,42 @@ func TestOpenAIGatewayServiceForward_NormalizesResponsesLiteToolsForOAuth(t *tes
 			require.Equal(t, "collaboration", gjson.GetBytes(upstream.lastBody, `input.#(type=="additional_tools").tools.0.name`).String())
 			require.Equal(t, "namespace", gjson.GetBytes(upstream.lastBody, "tool_choice.type").String())
 			require.Equal(t, "collaboration", gjson.GetBytes(upstream.lastBody, "tool_choice.name").String())
+			require.False(t, gjson.GetBytes(upstream.lastBody, "parallel_tool_calls").Bool())
 		})
 	}
+}
+
+func TestOpenAIGatewayServiceForward_NormalizesResponsesLiteForAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.144.1")
+	c.Request.Header.Set(responsesLiteHeader, "true")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_lite\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n" +
+				"data: [DONE]\n\n",
+		)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID: 502, Name: "responses-lite-apikey", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Concurrency: 1, Status: StatusActive, Schedulable: true, RateMultiplier: f64p(1),
+		Credentials: map[string]any{"api_key": "test-key", "base_url": "https://example.com/v1"},
+	}
+	body := []byte(`{
+		"model":"gpt-5.6-sol","stream":true,"instructions":"test",
+		"parallel_tool_calls":true,
+		"input":[{"type":"message","role":"user","content":"hello"}]
+	}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, gjson.GetBytes(upstream.lastBody, "parallel_tool_calls").Bool())
+	require.Equal(t, "all_turns", gjson.GetBytes(upstream.lastBody, "reasoning.context").String())
 }

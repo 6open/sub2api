@@ -16,6 +16,11 @@ func normalizeOpenAIResponsesLiteTools(reqBody map[string]any) (bool, error) {
 	if reqBody == nil {
 		return false, nil
 	}
+	changed := false
+	if parallel, ok := reqBody["parallel_tool_calls"].(bool); !ok || parallel {
+		reqBody["parallel_tool_calls"] = false
+		changed = true
+	}
 	if rawReasoning, exists := reqBody["reasoning"]; exists && rawReasoning != nil {
 		if _, ok := rawReasoning.(map[string]any); !ok {
 			return false, fmt.Errorf("responses Lite requires reasoning to be an object")
@@ -23,7 +28,8 @@ func normalizeOpenAIResponsesLiteTools(reqBody map[string]any) (bool, error) {
 	}
 	rawTools, exists := reqBody["tools"]
 	if !exists || rawTools == nil {
-		return ensureOpenAIResponsesLiteReasoningContext(reqBody)
+		reasoningChanged, err := ensureOpenAIResponsesLiteReasoningContext(reqBody)
+		return changed || reasoningChanged, err
 	}
 	tools, ok := rawTools.([]any)
 	if !ok {
@@ -57,7 +63,8 @@ func normalizeOpenAIResponsesLiteTools(reqBody map[string]any) (bool, error) {
 		}
 	}
 	if len(namespaceTools) == 0 {
-		return ensureOpenAIResponsesLiteReasoningContext(reqBody)
+		reasoningChanged, err := ensureOpenAIResponsesLiteReasoningContext(reqBody)
+		return changed || reasoningChanged, err
 	}
 
 	input, err := appendOpenAIResponsesLiteAdditionalTools(reqBody["input"], namespaceTools)
