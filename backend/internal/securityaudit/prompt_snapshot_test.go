@@ -54,11 +54,11 @@ func TestSnapshotRedactsCanariesAndPreservesHashOfScanText(t *testing.T) {
 	require.Empty(t, snapshot.Redacted().ScanText)
 }
 
-func TestSnapshotFullPromptKeepsUnredactedText(t *testing.T) {
+func TestSnapshotRiskPromptKeepsLatestUserTextInMemory(t *testing.T) {
 	body := `{"messages":[{"role":"user","content":"PROMPT_CANARY_ABC123 email@example.com sk-secretvalue123"}]}`
 	snapshot, err := ExtractPromptSnapshot(Request{Protocol: "openai_chat_completions", Body: []byte(body)})
 	require.NoError(t, err)
-	// The full prompt is stored verbatim for admin review, unlike the preview.
+	// It remains in memory until the confirmed-risk path redacts and encrypts it.
 	require.Contains(t, snapshot.FullPrompt, "PROMPT_CANARY_ABC123 email@example.com sk-secretvalue123")
 	require.NotContains(t, snapshot.RedactedPreview, "PROMPT_CANARY_ABC123")
 	require.Equal(t, snapshot.FullPrompt, snapshot.Redacted().FullPrompt)
@@ -72,10 +72,10 @@ func TestBuildFullPromptStripsNULAndTruncates(t *testing.T) {
 	require.True(t, strings.HasSuffix(trimmed, "…"))
 }
 
-func TestFullPromptFromScanTextRestoresMultiSegmentLayout(t *testing.T) {
-	scanText, metadataText := buildPrioritizedScanText([]string{"latest user", "system policy", "earlier user"})
+func TestFullPromptFromScanTextKeepsLatestUserOnly(t *testing.T) {
+	scanText, _ := buildPrioritizedScanText([]string{"latest user", "system policy", "earlier user"})
 	require.Contains(t, scanText, promptAuditPrioritySeparator)
-	require.Equal(t, metadataText, FullPromptFromScanText(scanText))
+	require.Equal(t, "latest user", FullPromptFromScanText(scanText))
 
 	singleScan, singleMeta := buildPrioritizedScanText([]string{"only"})
 	require.NotContains(t, singleScan, promptAuditPrioritySeparator)
@@ -293,13 +293,13 @@ func TestPromptSnapshotIncludesClientControlledInstructions(t *testing.T) {
 	}
 }
 
-func TestBlockingPromptSnapshotLimitsInputToLatestUserAndPreviousOutput(t *testing.T) {
+func TestBlockingPromptSnapshotLimitsInputToLatestUser(t *testing.T) {
 	tests := []struct {
 		name, protocol, body, want string
 		omitted                    []string
 	}{
 		{
-			name:     "chat keeps multipart latest user and prior assistant",
+			name:     "chat keeps multipart latest user",
 			protocol: "openai_chat_completions",
 			body: `{"messages":[
 				{"role":"system","content":"system instruction"},
@@ -309,19 +309,19 @@ func TestBlockingPromptSnapshotLimitsInputToLatestUserAndPreviousOutput(t *testi
 				{"role":"assistant","content":"previous assistant output"},
 				{"role":"user","content":[{"type":"text","text":"latest user first part"},{"type":"text","text":"latest user second part"}]}
 			]}`,
-			want:    "latest user first part\n\nlatest user second part" + promptAuditPrioritySeparator + "previous assistant output",
-			omitted: []string{"system instruction", "older user input", "older assistant output", "tool payload"},
+			want:    "latest user first part\n\nlatest user second part",
+			omitted: []string{"system instruction", "older user input", "older assistant output", "tool payload", "previous assistant output"},
 		},
 		{
-			name:     "gemini keeps prior model output",
+			name:     "gemini keeps latest user only",
 			protocol: "gemini",
 			body: `{"systemInstruction":{"parts":[{"text":"system instruction"}]},"contents":[
 				{"role":"user","parts":[{"text":"older user input"}]},
 				{"role":"model","parts":[{"text":"previous model output"}]},
 				{"role":"user","parts":[{"text":"latest user input"}]}
 			]}`,
-			want:    "latest user input" + promptAuditPrioritySeparator + "previous model output",
-			omitted: []string{"system instruction", "older user input"},
+			want:    "latest user input",
+			omitted: []string{"system instruction", "older user input", "previous model output"},
 		},
 	}
 	for _, tt := range tests {
@@ -358,13 +358,13 @@ func TestResponsesOutputTextIncludedInFullAndLatestTurnSnapshots(t *testing.T) {
 	full, err := ExtractPromptSnapshot(req)
 	require.NoError(t, err)
 	require.Contains(t, full.ScanText, "captured previous assistant output")
-	require.Contains(t, full.FullPrompt, "captured previous assistant output")
+	require.Equal(t, "captured latest user input", full.FullPrompt)
 	require.Equal(t, 3, full.MessageCount)
 
 	latestTurn, err := ExtractBlockingPromptSnapshot(req, true)
 	require.NoError(t, err)
-	require.Equal(t, "captured latest user input"+promptAuditPrioritySeparator+"captured previous assistant output", latestTurn.ScanText)
-	require.Equal(t, 2, latestTurn.MessageCount)
+	require.Equal(t, "captured latest user input", latestTurn.ScanText)
+	require.Equal(t, 1, latestTurn.MessageCount)
 	require.NotContains(t, latestTurn.ScanText, "earlier user input")
 }
 
@@ -377,11 +377,24 @@ func TestBlockingPromptSnapshotPreservesFullScopeByDefaultAndWithoutUserInput(t 
 	require.Equal(t, full, defaultBlocking)
 
 	noUser := Request{Protocol: "openai_chat_completions", Body: []byte(`{"messages":[{"role":"system","content":"system instruction"},{"role":"assistant","content":"assistant output"}]}`)}
-	fullWithoutUser, err := ExtractPromptSnapshot(noUser)
-	require.NoError(t, err)
 	narrowWithoutUser, err := ExtractBlockingPromptSnapshot(noUser, true)
 	require.NoError(t, err)
-	require.Equal(t, fullWithoutUser, narrowWithoutUser)
+	require.Equal(t, "assistant output", narrowWithoutUser.ScanText)
+	require.Equal(t, 1, narrowWithoutUser.MessageCount)
+}
+
+func TestBlockingPromptSnapshotBoundsLargeLatestTurn(t *testing.T) {
+	prompt := strings.Repeat("H", blockingPromptHeadRunes) + strings.Repeat("M", 40000) + strings.Repeat("T", 10000)
+	body, err := json.Marshal(map[string]any{"messages": []any{map[string]any{"role": "user", "content": prompt}}})
+	require.NoError(t, err)
+
+	snapshot, err := ExtractBlockingPromptSnapshot(Request{Protocol: "openai_chat_completions", Body: body}, true)
+	require.NoError(t, err)
+	require.Equal(t, DefaultBlockingPromptMaxRunes, utf8.RuneCountInString(snapshot.ScanText))
+	require.True(t, strings.HasPrefix(snapshot.ScanText, strings.Repeat("H", blockingPromptHeadRunes)))
+	require.Contains(t, snapshot.ScanText, blockingPromptOmissionMarker)
+	require.True(t, strings.HasSuffix(snapshot.ScanText, strings.Repeat("T", 10000)))
+	require.NotContains(t, snapshot.ScanText, strings.Repeat("M", 30000))
 }
 
 func TestBuildPromptPreviewWithholdsMajorityOfOrdinaryText(t *testing.T) {

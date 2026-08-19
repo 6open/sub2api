@@ -103,11 +103,27 @@ func (r *PostgreSQLRepository) ListEvents(ctx context.Context, filter EventFilte
 }
 
 func (r *PostgreSQLRepository) GetEvent(ctx context.Context, id int64) (*Event, error) {
-	event, err := scanEvent(r.db.QueryRowContext(ctx, `SELECT `+eventDetailColumns("e")+` FROM prompt_audit_events e WHERE e.id=$1`, id), true)
+	event, err := scanEvent(r.db.QueryRowContext(ctx, `SELECT `+eventColumns("e")+` FROM prompt_audit_events e WHERE e.id=$1`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrEventNotFound
 	}
-	return event, err
+	if err != nil || r.encryptor == nil {
+		return event, err
+	}
+	var ciphertext string
+	err = r.db.QueryRowContext(ctx, `SELECT prompt_ciphertext FROM risk_prompt_records
+		WHERE source=$1 AND request_id=$2 AND expires_at>NOW()
+		ORDER BY created_at DESC,id DESC LIMIT 1`, RiskPromptSourceGuard, event.Snapshot.RequestID).Scan(&ciphertext)
+	if errors.Is(err, sql.ErrNoRows) {
+		return event, nil
+	}
+	if err != nil {
+		return event, nil
+	}
+	if prompt, decryptErr := r.encryptor.Decrypt(ciphertext); decryptErr == nil {
+		event.Snapshot.FullPrompt = prompt
+	}
+	return event, nil
 }
 
 func (r *PostgreSQLRepository) DeleteEvent(ctx context.Context, id int64) (*DeleteResult, error) {

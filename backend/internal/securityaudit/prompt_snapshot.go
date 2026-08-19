@@ -46,9 +46,10 @@ func extractPromptSnapshot(req Request, latestTurnOnly bool) (PromptSnapshot, er
 		return PromptSnapshot{}, errors.New("prompt audit request JSON is invalid")
 	}
 	extracted := extractProtocolSegments(req.Protocol, document)
+	latestUserPrompt := latestUserPromptFromSegments(extracted)
 	segments := normalizeSegmentsLatestUserFirst(extracted)
 	if latestTurnOnly {
-		segments = blockingSegmentsLatestUserAndPreviousOutput(extracted)
+		segments = blockingSegmentsLatestUser(extracted)
 	}
 	if len(segments) == 0 {
 		return PromptSnapshot{}, ErrNoPromptText
@@ -65,7 +66,7 @@ func extractPromptSnapshot(req Request, latestTurnOnly bool) (PromptSnapshot, er
 		GroupID: cloneInt64Ptr(req.GroupID), GroupName: req.GroupName, Provider: req.Provider,
 		Endpoint: req.Endpoint, Protocol: req.Protocol, Model: req.Model,
 		PromptHash: hex.EncodeToString(digest[:]), RedactedPreview: BuildPromptPreview(metadataText, DefaultPromptPreviewMaxRunes),
-		FullPrompt:   BuildFullPrompt(metadataText, DefaultFullPromptMaxRunes),
+		FullPrompt:   BuildFullPrompt(latestUserPrompt, DefaultFullPromptMaxRunes),
 		PromptLength: utf8.RuneCountInString(metadataText), MessageCount: len(segments), Stage: stage,
 		ScanText: scanText,
 	}, nil
@@ -74,6 +75,12 @@ func extractPromptSnapshot(req Request, latestTurnOnly bool) (PromptSnapshot, er
 // DefaultPromptPreviewMaxRunes caps how much sanitized prompt text may be
 // considered before BuildPromptPreview withholds the majority for storage/UI.
 const DefaultPromptPreviewMaxRunes = 96
+
+const (
+	DefaultBlockingPromptMaxRunes = 32 * 1024
+	blockingPromptHeadRunes       = 8 * 1024
+	blockingPromptOmissionMarker  = "\n\n[...middle omitted for synchronous audit...]\n\n"
+)
 
 // DefaultFullPromptMaxRunes caps how much unredacted prompt text is persisted
 // on an audit event for admin review. It is deliberately generous so realistic
@@ -457,17 +464,17 @@ func normalizeSegmentsLatestUserFirst(values []promptSegment) []string {
 	return result
 }
 
-// blockingSegmentsLatestUserAndPreviousOutput limits synchronous guard input to
-// the current user turn and the nearest preceding assistant/model turn. It is
-// deliberately opt-in because full transcript scanning remains stronger at
-// finding client-controlled content placed in older or non-user messages.
-func blockingSegmentsLatestUserAndPreviousOutput(values []promptSegment) []string {
+// blockingSegmentsLatestUser keeps synchronous auditing bounded to the current
+// client turn. Older model output can be hundreds of thousands of characters
+// and is not newly supplied user intent.
+func blockingSegmentsLatestUser(values []promptSegment) []string {
 	normalized := normalizedPromptSegments(values)
 	latestUserStart := latestUserSegmentStart(normalized)
 	if latestUserStart < 0 {
-		// A request without user content cannot be narrowed safely. Preserve the
-		// established full-snapshot behavior for unusual protocol payloads.
-		return normalizeSegmentsLatestUserFirst(values)
+		if len(normalized) == 0 {
+			return nil
+		}
+		return []string{boundBlockingPrompt(normalized[len(normalized)-1].text)}
 	}
 	latestUserEnd := latestUserStart
 	for latestUserEnd < len(normalized) && isUserSegment(normalized[latestUserEnd]) {
@@ -477,22 +484,17 @@ func blockingSegmentsLatestUserAndPreviousOutput(values []promptSegment) []strin
 	for _, segment := range normalized[latestUserStart:latestUserEnd] {
 		currentUserText = append(currentUserText, segment.text)
 	}
-	// A single client turn may have several text content parts. Keep it in one
-	// priority segment so every part of the latest input is scanned before the
-	// prior output begins.
-	selected := []promptSegment{{text: strings.Join(currentUserText, "\n\n"), user: true, role: "user"}}
-	for index := latestUserStart - 1; index >= 0; index-- {
-		if !isAssistantOutputSegment(normalized[index]) {
-			continue
-		}
-		start := index
-		for start > 0 && isAssistantOutputSegment(normalized[start-1]) {
-			start--
-		}
-		selected = append(selected, normalized[start:index+1]...)
-		break
+	return []string{boundBlockingPrompt(strings.Join(currentUserText, "\n\n"))}
+}
+
+func boundBlockingPrompt(value string) string {
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) <= DefaultBlockingPromptMaxRunes {
+		return string(runes)
 	}
-	return promptSegmentTexts(selected)
+	marker := []rune(blockingPromptOmissionMarker)
+	tailRunes := DefaultBlockingPromptMaxRunes - blockingPromptHeadRunes - len(marker)
+	return string(runes[:blockingPromptHeadRunes]) + blockingPromptOmissionMarker + string(runes[len(runes)-tailRunes:])
 }
 
 func normalizedPromptSegments(values []promptSegment) []promptSegment {
@@ -520,20 +522,25 @@ func latestUserSegmentStart(values []promptSegment) int {
 	return latest
 }
 
+func latestUserPromptFromSegments(values []promptSegment) string {
+	normalized := normalizedPromptSegments(values)
+	start := latestUserSegmentStart(normalized)
+	if start < 0 {
+		return ""
+	}
+	end := start
+	for end < len(normalized) && isUserSegment(normalized[end]) {
+		end++
+	}
+	parts := make([]string, 0, end-start)
+	for _, segment := range normalized[start:end] {
+		parts = append(parts, segment.text)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 func isUserSegment(segment promptSegment) bool {
 	return segment.user || segment.role == "user"
-}
-
-func isAssistantOutputSegment(segment promptSegment) bool {
-	return segment.role == "assistant" || segment.role == "model"
-}
-
-func promptSegmentTexts(values []promptSegment) []string {
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		result = append(result, value.text)
-	}
-	return result
 }
 
 func buildPrioritizedScanText(segments []string) (scanText string, metadataText string) {
@@ -626,12 +633,13 @@ func BuildFullPrompt(value string, maxRunes int) string {
 	return TrimRunes(strings.TrimSpace(value), maxRunes)
 }
 
-// FullPromptFromScanText reconstructs the display prompt from the worker scan
-// payload. buildPrioritizedScanText inserts exactly one priority separator
-// between the prioritized segment and the remainder, so replacing it with the
-// metadata joiner yields the original multi-segment text.
+// FullPromptFromScanText returns only the prioritized latest-user segment for
+// encrypted risk retention. Older transcript turns must never be retained.
 func FullPromptFromScanText(scanText string) string {
-	return BuildFullPrompt(strings.ReplaceAll(scanText, promptAuditPrioritySeparator, "\n\n"), DefaultFullPromptMaxRunes)
+	if index := strings.Index(scanText, promptAuditPrioritySeparator); index >= 0 {
+		scanText = scanText[:index]
+	}
+	return BuildFullPrompt(scanText, DefaultFullPromptMaxRunes)
 }
 
 func TrimRunes(value string, limit int) string {

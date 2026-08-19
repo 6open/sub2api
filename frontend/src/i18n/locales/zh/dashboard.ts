@@ -586,7 +586,7 @@ export default {
     transferFailed: '转入余额失败',
     stats: {
       rebateRate: '我的返利比例',
-      rebateRateHint: '被邀请用户每次充值后你可获得的返利比例',
+      rebateRateHint: '被邀请用户实际消费后，你按标准用量获得返利的比例',
       invitedUsers: '邀请人数',
       availableQuota: '可转返利额度',
       frozenQuota: '冻结中',
@@ -614,7 +614,7 @@ export default {
     tips: {
       title: '使用说明',
       line1: '将邀请码或邀请链接分享给新用户。',
-      line2: '被邀请用户充值后，你可获得 {rate} 的返利额度。',
+      line2: '被邀请用户实际消费后，你可获得其标准用量 {rate} 的返利额度。',
       line3: '返利额度可随时转入账户余额。',
       line4: '新产生的返利需要经过冻结期后才能提现。'
     }
@@ -645,8 +645,7 @@ export default {
     codeRule4: '余额和并发数即时更新',
     codeTypeTipTitle: '兑换码类型说明',
     generalCodeTip: '普通兑换码：按兑换码面值直接增加余额、并发数或订阅权限。',
-    ldcCodeTip:
-      'LDC兑换码：按当前 lklb 账号历史 LDC 兑换额度阶梯折算，前 $10 按 10 LDC = $1，超出部分按 40 LDC = $1。',
+    ldcCodeTip: 'LDC兑换码：统一按 40 LDC = $1 折算。',
     recentActivity: '最近活动',
     historyWillAppear: '您的兑换历史将显示在这里',
     balanceAddedRedeem: '余额充值（兑换）',

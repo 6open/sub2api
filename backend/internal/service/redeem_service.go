@@ -462,11 +462,7 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 		if err := s.validateLDCUserLinuxDoBinding(txCtx, txClient, userID, ldcMeta); err != nil {
 			return nil, err
 		}
-		issuedUSD, err := s.issuedLDCUSDForUser(txCtx, txClient, userID)
-		if err != nil {
-			return nil, fmt.Errorf("calculate user ldc issued quota: %w", err)
-		}
-		ldcCreditUSD = calculateLDCCodeCreditUSD(redeemCode.Value, issuedUSD)
+		ldcCreditUSD = calculateLDCCodeCreditUSD(redeemCode.Value)
 	}
 
 	// 【关键】先标记兑换码为已使用，确保并发安全
@@ -550,11 +546,6 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 
 	// 事务提交成功后失效缓存
 	s.invalidateRedeemCaches(ctx, userID, redeemCode)
-
-	// 余额类正数兑换码触发邀请返利（best-effort，失败不影响兑换结果）
-	if redeemCode.Type == RedeemTypeBalance && redeemCode.Value > 0 {
-		s.tryAccrueAffiliateRebateForRedeem(ctx, userID, redeemCode.Value)
-	}
 
 	// 重新获取更新后的兑换码
 	redeemCode, err = s.redeemRepo.GetByID(ctx, redeemCode.ID)

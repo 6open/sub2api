@@ -9,9 +9,8 @@ describe('RedeemView LDC code explanation', () => {
 
     expect(source).toContain('codeTypeTipTitle')
     expect(zh).toContain('普通兑换码：按兑换码面值直接增加余额、并发数或订阅权限。')
-    expect(zh).toContain('LDC兑换码：按当前 lklb 账号历史 LDC 兑换额度阶梯折算')
-    expect(zh).toContain('前 $10 按 10 LDC = $1')
-    expect(zh).toContain('超出部分按 40 LDC = $1')
+    expect(zh).toContain('LDC兑换码：统一按 40 LDC = $1 折算。')
+    expect(zh).not.toContain('前 $10 按 10 LDC = $1')
     expect(zh).not.toContain('兑换 LDC 码无需绑定 LinuxDO')
   })
 })

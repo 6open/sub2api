@@ -39,6 +39,15 @@ type UsageBillingCommand struct {
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
 	AccountQuotaCost    float64
+
+	// Affiliate usage rebate is applied atomically with balance billing. The
+	// base uses standard (pre-multiplier) usage so the reward is standard quota.
+	AffiliateEnabled             bool
+	AffiliateStandardCost        float64
+	AffiliateRebateRatePercent   float64
+	AffiliateRebateFreezeHours   int
+	AffiliateRebateDurationDays  int
+	AffiliateRebatePerInviteeCap float64
 }
 
 func (c *UsageBillingCommand) Normalize() {

@@ -39,7 +39,7 @@
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p class="text-base font-semibold text-rose-700 dark:text-rose-300">支付宝限时直充 5 折</p>
-                  <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">即刻起至8月8日，实付 ¥100 到账 $200</p>
+                  <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">延长至8月9日，实付 ¥100 到账 $200</p>
                 </div>
                 <div class="text-right text-sm">
                   <p class="text-gray-500 dark:text-gray-400">本账号剩余优惠实付</p>
@@ -57,7 +57,26 @@
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
             <template v-else>
-            <div class="card p-6">
+            <div v-if="checkout.balance_packages.length > 0" class="card p-6">
+              <div class="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h2 class="text-sm font-semibold text-gray-900 dark:text-white">充值满 100 享 9 折</h2>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">以下为快捷到账额度，也可自定义金额</p>
+                </div>
+                <span class="text-xs text-gray-500 dark:text-gray-400">到账额度</span>
+              </div>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <button v-for="pkg in checkout.balance_packages" :key="pkg.id" type="button"
+                  :class="['relative h-28 rounded-lg border p-4 text-left transition-colors', selectedBalancePackage?.id === pkg.id ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500 dark:bg-primary-950/30' : 'border-gray-200 bg-white hover:border-primary-300 dark:border-dark-600 dark:bg-dark-800']"
+                  @click="selectBalancePackage(pkg)">
+                  <span v-if="pkg.badge" class="absolute right-3 top-3 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">{{ pkg.badge === 'recommended' ? '推荐' : '最划算' }}</span>
+                  <span class="block text-2xl font-bold text-gray-950 dark:text-white">${{ pkg.credit_amount }}</span>
+                  <span class="mt-2 block text-sm text-gray-500 dark:text-gray-400">实付 <strong class="text-base text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(pkg.pay_amount) }}</strong></span>
+                </button>
+              </div>
+              <button type="button" class="mt-3 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400" @click="selectCustomBalanceAmount">自定义充值</button>
+            </div>
+            <div v-if="!selectedBalancePackage" class="card p-6">
               <AmountInput
                 v-model="amount"
                 :amounts="promotionActive ? [10, 50, 100] : [1, 10, 100]"
@@ -74,11 +93,11 @@
                 @select="selectedMethod = $event"
               />
             </div>
-            <div v-if="validAmount > 0" class="card p-6">
+            <div v-if="balancePaymentBase > 0" class="card p-6">
               <div class="space-y-2 text-sm">
                 <div class="flex justify-between">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.paymentAmount') }}</span>
-                  <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(validAmount) }}</span>
+                  <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(balancePaymentBase) }}</span>
                 </div>
                 <div v-if="effectiveFeeRate > 0" class="flex justify-between">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }} ({{ effectiveFeeRate }}%)</span>
@@ -88,12 +107,15 @@
                   <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.actualPay') }}</span>
                   <span class="text-lg font-bold text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
                 </div>
-                <div v-if="effectiveRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': effectiveFeeRate <= 0 }">
+                <div v-if="selectedBalancePackage || customBalanceDiscountEligible || effectiveRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': effectiveFeeRate <= 0 }">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
                   <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
                 </div>
                 <p v-if="effectiveRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
                   {{ promotionActive ? '活动优惠仅适用于支付宝在线充值' : t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
+                </p>
+                <p v-else-if="customBalanceDiscountEligible" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
+                  单次到账额度满 {{ balanceDiscountThreshold.toFixed(0) }}，已享 9 折优惠
                 </p>
               </div>
             </div>
@@ -127,7 +149,7 @@
                   </span>
                   <div class="min-w-0 flex-1">
                     <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-white">LinuxDO 积分购买</h3>
-                    <p class="mt-0.5 text-xs leading-5 text-gray-500 dark:text-gray-400">前 10刀额度享特惠：10 LDC = 1刀<br>超出后按 40 LDC = 1刀</p>
+                    <p class="mt-0.5 text-xs leading-5 text-gray-500 dark:text-gray-400">统一按 40 LDC = 1刀兑换</p>
                   </div>
                   <button type="button" class="btn btn-secondary btn-sm shrink-0" @click="handleLinuxDoShopPurchase">购买</button>
                 </div>
@@ -318,7 +340,7 @@ import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
-import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import type { BalancePackage, SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -376,6 +398,7 @@ const errorMessage = ref('')
 const errorHintMessage = ref('')
 const activeTab = ref<'recharge' | 'subscription'>('recharge')
 const amount = ref<number | null>(null)
+const selectedBalancePackage = ref<BalancePackage | null>(null)
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
@@ -388,6 +411,7 @@ interface CreateOrderOptions {
   paymentType?: string
   isResume?: boolean
   mobileQrFallbackAttempted?: boolean
+  balancePackageId?: string
 }
 
 interface WeixinJSBridgeLike {
@@ -554,7 +578,7 @@ function onPaymentSettled() {
 // All checkout data from single API call
 const checkout = ref<CheckoutInfoResponse>({
   methods: {}, global_min: 0, global_max: 0,
-  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '', balance_packages: [], balance_discount_threshold: 100, balance_discount_rate: 0.9, balance_discount_available: false,
 })
 
 const promotionActive = computed(() =>
@@ -589,7 +613,28 @@ const subscriptionUsdToCnyRate = computed(() => {
   return Number.isFinite(rate) && rate > 0 ? rate : 0
 })
 const effectiveRechargeMultiplier = computed(() => promotionActive.value ? (checkout.value.promotion?.multiplier ?? 2) : balanceRechargeMultiplier.value)
-const creditedAmount = computed(() => Math.round((validAmount.value * effectiveRechargeMultiplier.value) * 100) / 100)
+const creditedAmount = computed(() => selectedBalancePackage.value?.credit_amount ?? Math.round((validAmount.value * effectiveRechargeMultiplier.value) * 100) / 100)
+const balanceDiscountThreshold = computed(() => checkout.value.balance_discount_threshold || 100)
+const balanceDiscountRate = computed(() => checkout.value.balance_discount_rate || 0.9)
+const customBalanceDiscountEligible = computed(() =>
+  !selectedBalancePackage.value
+  && checkout.value.balance_discount_available === true
+  && creditedAmount.value >= balanceDiscountThreshold.value
+)
+const balancePaymentBase = computed(() => {
+  if (selectedBalancePackage.value) return selectedBalancePackage.value.pay_amount
+  if (customBalanceDiscountEligible.value) return Math.round(creditedAmount.value * balanceDiscountRate.value * 100) / 100
+  return validAmount.value
+})
+
+function selectBalancePackage(pkg: BalancePackage) {
+  selectedBalancePackage.value = pkg
+  amount.value = null
+}
+
+function selectCustomBalanceAmount() {
+  selectedBalancePackage.value = null
+}
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
 const planGridClass = computed(() => {
@@ -689,7 +734,7 @@ const methodOptions = computed<PaymentMethodOption[]>(() =>
       type,
       display_name: ml?.display_name,
       fee_rate: ml?.fee_rate ?? 0,
-      available: ml?.available !== false && amountFitsMethod(validAmount.value, type),
+      available: ml?.available !== false && amountFitsMethod(balancePaymentBase.value, type),
     }
   })
 )
@@ -697,38 +742,38 @@ const methodOptions = computed<PaymentMethodOption[]>(() =>
 const feeRate = computed(() => checkout.value?.recharge_fee_rate ?? 0)
 const effectiveFeeRate = computed(() => promotionActive.value ? 0 : feeRate.value)
 const feeAmount = computed(() =>
-  effectiveFeeRate.value > 0 && validAmount.value > 0
-    ? Math.ceil(((validAmount.value * effectiveFeeRate.value) / 100) * 100) / 100
+  effectiveFeeRate.value > 0 && balancePaymentBase.value > 0
+    ? Math.ceil(((balancePaymentBase.value * effectiveFeeRate.value) / 100) * 100) / 100
     : 0
 )
 const totalAmount = computed(() =>
-  effectiveFeeRate.value > 0 && validAmount.value > 0
-    ? Math.round((validAmount.value + feeAmount.value) * 100) / 100
-    : validAmount.value
+  effectiveFeeRate.value > 0 && balancePaymentBase.value > 0
+    ? Math.round((balancePaymentBase.value + feeAmount.value) * 100) / 100
+    : balancePaymentBase.value
 )
 
 const amountError = computed(() => {
-  if (validAmount.value <= 0) return ''
+  if (balancePaymentBase.value <= 0) return ''
   if (promotionActive.value && validAmount.value > promotionRemaining.value) {
     return `本账号活动剩余可实付 ¥${promotionRemaining.value.toFixed(2)}`
   }
   // No method can handle this amount
-  if (!enabledMethods.value.some((m) => amountFitsMethod(validAmount.value, m))) {
+  if (!enabledMethods.value.some((m) => amountFitsMethod(balancePaymentBase.value, m))) {
     return t('payment.amountNoMethod')
   }
   // Selected method can't handle this amount (but others can)
   const ml = selectedLimit.value
   if (ml) {
-    if (ml.single_min > 0 && validAmount.value < ml.single_min) return t('payment.amountTooLow', { min: formatSelectedPaymentAmount(ml.single_min) })
-    if (ml.single_max > 0 && validAmount.value > ml.single_max) return t('payment.amountTooHigh', { max: formatSelectedPaymentAmount(ml.single_max) })
+    if (ml.single_min > 0 && balancePaymentBase.value < ml.single_min) return t('payment.amountTooLow', { min: formatSelectedPaymentAmount(ml.single_min) })
+    if (ml.single_max > 0 && balancePaymentBase.value > ml.single_max) return t('payment.amountTooHigh', { max: formatSelectedPaymentAmount(ml.single_max) })
   }
   return ''
 })
 
 const canSubmit = computed(() =>
-  validAmount.value > 0
+  balancePaymentBase.value > 0
     && (!promotionActive.value || validAmount.value <= promotionRemaining.value)
-    && amountFitsMethod(validAmount.value, selectedMethod.value)
+    && amountFitsMethod(balancePaymentBase.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
 )
 
@@ -859,7 +904,8 @@ async function handleLinuxDoShopPurchase() {
 
 async function handleSubmitRecharge() {
   if (!canSubmit.value || submitting.value) return
-  await createOrder(validAmount.value, 'balance')
+  const requestAmount = selectedBalancePackage.value ? balancePaymentBase.value : validAmount.value
+  await createOrder(requestAmount, 'balance', undefined, { balancePackageId: selectedBalancePackage.value?.id })
 }
 
 async function confirmSubscribe() {
@@ -878,6 +924,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       paymentType: requestType,
       orderType,
       planId,
+      balancePackageId: options.balancePackageId,
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: isMobileDevice(),
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
@@ -1260,7 +1307,7 @@ onMounted(async () => {
     // the Xianyu quota purchase entry is static and does not depend on checkout APIs.
     checkout.value = {
       methods: {}, global_min: 0, global_max: 0,
-      plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+      plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '', balance_packages: [], balance_discount_threshold: 100, balance_discount_rate: 0.9, balance_discount_available: false,
     }
   }
   finally { loading.value = false }

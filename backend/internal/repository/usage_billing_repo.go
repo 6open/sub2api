@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -54,12 +55,112 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 	if err := r.applyUsageBillingEffects(ctx, tx, cmd, result); err != nil {
 		return nil, err
 	}
+	if err := applyUsageAffiliateRebate(ctx, tx, cmd); err != nil {
+		return nil, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	tx = nil
 	return result, nil
+}
+
+func applyUsageAffiliateRebate(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) error {
+	if cmd == nil || cmd.BalanceCost <= 0 {
+		return nil
+	}
+	eligibleStandardCost, err := consumeNonRebatableAffiliateBalance(ctx, tx, cmd.UserID, cmd.BalanceCost, cmd.AffiliateStandardCost)
+	if err != nil {
+		return err
+	}
+	if !cmd.AffiliateEnabled || eligibleStandardCost <= 0 || cmd.AffiliateRebateRatePercent <= 0 {
+		return nil
+	}
+
+	// Lock the inviter row while calculating the per-invitee cap. The ledger
+	// source key makes a retried request idempotent at the database layer.
+	_, err = tx.ExecContext(ctx, `
+WITH relation AS (
+    SELECT invitee.inviter_id, invitee.created_at AS invited_at,
+           COALESCE(inviter.aff_rebate_rate_percent, $4)::numeric AS rate
+    FROM user_affiliates invitee
+    JOIN user_affiliates inviter ON inviter.user_id = invitee.inviter_id
+    WHERE invitee.user_id = $1
+      AND invitee.inviter_id IS NOT NULL
+      AND invitee.inviter_id <> invitee.user_id
+      AND ($6 <= 0 OR invitee.created_at + make_interval(days => $6) >= NOW())
+    FOR UPDATE OF inviter
+), accrued AS (
+    SELECT COALESCE(SUM(l.amount), 0)::numeric AS amount
+    FROM user_affiliate_ledger l
+    JOIN relation r ON r.inviter_id = l.user_id
+    WHERE l.source_user_id = $1
+      AND l.action IN ('accrue', 'accrue_usage')
+), reward AS (
+    SELECT r.inviter_id,
+           GREATEST(LEAST(
+               ROUND(($3::numeric * LEAST(GREATEST(r.rate, 0), 100) / 100), 8),
+               CASE WHEN $7 > 0 THEN GREATEST($7::numeric - a.amount, 0) ELSE 1e100::numeric END
+           ), 0) AS amount
+    FROM relation r CROSS JOIN accrued a
+), inserted AS (
+    INSERT INTO user_affiliate_ledger (
+        user_id, action, amount, source_user_id, source_request_id, source_api_key_id, frozen_until, created_at, updated_at
+    )
+    SELECT inviter_id, 'accrue_usage', amount, $1, $2, $8,
+           CASE WHEN $5 > 0 THEN NOW() + make_interval(hours => $5) ELSE NULL END, NOW(), NOW()
+    FROM reward
+    WHERE amount > 0
+    ON CONFLICT (source_request_id, source_api_key_id) WHERE action = 'accrue_usage' DO NOTHING
+    RETURNING user_id, amount, frozen_until
+)
+UPDATE user_affiliates ua
+SET aff_quota = ua.aff_quota + CASE WHEN i.frozen_until IS NULL THEN i.amount ELSE 0 END,
+    aff_frozen_quota = ua.aff_frozen_quota + CASE WHEN i.frozen_until IS NOT NULL THEN i.amount ELSE 0 END,
+    aff_history_quota = ua.aff_history_quota + i.amount,
+    updated_at = NOW()
+FROM inserted i
+WHERE ua.user_id = i.user_id`,
+		cmd.UserID, cmd.RequestID, eligibleStandardCost, cmd.AffiliateRebateRatePercent,
+		cmd.AffiliateRebateFreezeHours, cmd.AffiliateRebateDurationDays, cmd.AffiliateRebatePerInviteeCap, cmd.APIKeyID)
+	if err != nil {
+		return fmt.Errorf("apply usage affiliate rebate: %w", err)
+	}
+	return nil
+}
+
+func consumeNonRebatableAffiliateBalance(ctx context.Context, tx *sql.Tx, userID int64, actualCost, standardCost float64) (float64, error) {
+	if actualCost <= 0 || standardCost <= 0 {
+		return 0, nil
+	}
+	var consumed float64
+	err := tx.QueryRowContext(ctx, `
+WITH current AS (
+    SELECT non_rebatable_balance
+    FROM users
+    WHERE id = $1 AND deleted_at IS NULL
+    FOR UPDATE
+), updated AS (
+    UPDATE users u
+    SET non_rebatable_balance = GREATEST(u.non_rebatable_balance - $2, 0),
+        updated_at = NOW()
+    FROM current c
+    WHERE u.id = $1 AND u.deleted_at IS NULL
+    RETURNING LEAST(c.non_rebatable_balance, $2)::double precision AS consumed
+)
+SELECT COALESCE((SELECT consumed FROM updated), 0)::double precision`, userID, actualCost).Scan(&consumed)
+	if err != nil {
+		return 0, fmt.Errorf("consume non-rebatable affiliate balance: %w", err)
+	}
+	eligibleRatio := 1 - consumed/actualCost
+	if eligibleRatio <= 0 {
+		return 0, nil
+	}
+	if eligibleRatio > 1 {
+		eligibleRatio = 1
+	}
+	return standardCost * eligibleRatio, nil
 }
 
 func (r *usageBillingRepository) claimUsageBillingKey(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (bool, error) {

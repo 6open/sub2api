@@ -122,6 +122,10 @@ type OpenAIQuotaService struct {
 	agentIdentityWS      agentIdentityWSConnectionInvalidator
 }
 
+type openAIObservedRateLimitClearer interface {
+	ClearOpenAIRateLimitIfObserved(ctx context.Context, id int64, observedLimitedAt, observedResetAt time.Time) (bool, error)
+}
+
 // NewOpenAIQuotaService constructs a quota service. token provider is required —
 // it ensures we always invoke upstream with a valid (refreshed-if-needed)
 // access_token, sharing the same refresh/locking machinery used by the gateway.
@@ -143,6 +147,7 @@ func NewOpenAIQuotaService(
 // OAuth account. Returns infraerrors so the handler layer can map them to
 // stable error codes / HTTP statuses.
 func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*OpenAIQuotaUsage, error) {
+	observedAccount, _ := s.accountRepo.GetByID(ctx, accountID)
 	accessToken, chatGPTAccountID, proxyURL, fedRAMP, err := s.prepareUpstreamCall(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -188,6 +193,7 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 	}
 
 	payload.FetchedAt = time.Now().Unix()
+	s.clearObservedOpenAIRateLimitWhenHealthy(ctx, observedAccount, &payload)
 	details := s.queryResetCreditDetails(callCtx, client, accessToken, chatGPTAccountID, fedRAMP, accountID)
 	if details != nil {
 		hasDetailCount := details.AvailableCount != nil
@@ -205,6 +211,36 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 		}
 	}
 	return &payload, nil
+}
+
+func (s *OpenAIQuotaService) clearObservedOpenAIRateLimitWhenHealthy(ctx context.Context, account *Account, usage *OpenAIQuotaUsage) {
+	if account == nil || account.IsShadow() || account.RateLimitedAt == nil || account.RateLimitResetAt == nil || !openAIQuotaWindowsHealthy(usage) {
+		return
+	}
+	clearer, ok := s.accountRepo.(openAIObservedRateLimitClearer)
+	if !ok {
+		return
+	}
+	cleared, err := clearer.ClearOpenAIRateLimitIfObserved(ctx, account.ID, *account.RateLimitedAt, *account.RateLimitResetAt)
+	if err != nil {
+		slog.Warn("openai_quota_healthy_rate_limit_clear_failed", "account_id", account.ID, "error", err)
+		return
+	}
+	if cleared {
+		slog.Info("openai_quota_healthy_rate_limit_cleared", "account_id", account.ID)
+	}
+}
+
+func openAIQuotaWindowsHealthy(usage *OpenAIQuotaUsage) bool {
+	if usage == nil || usage.RateLimit == nil || !usage.RateLimit.Allowed || usage.RateLimit.LimitReached {
+		return false
+	}
+	primary, secondary := usage.RateLimit.PrimaryWindow, usage.RateLimit.SecondaryWindow
+	if primary == nil || secondary == nil {
+		return false
+	}
+	return primary.UsedPercent >= 0 && primary.UsedPercent < 100 &&
+		secondary.UsedPercent >= 0 && secondary.UsedPercent < 100
 }
 
 // CacheResetCreditsSnapshot persists a complete reset-credit snapshot after an

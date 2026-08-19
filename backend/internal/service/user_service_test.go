@@ -426,7 +426,7 @@ func TestGetProfileIdentitySummaries_AllowsUnbindWhenAnotherLoginMethodRemains(t
 
 	require.NoError(t, err)
 	require.True(t, summaries.LinuxDo.Bound)
-	require.True(t, summaries.LinuxDo.CanUnbind)
+	require.False(t, summaries.LinuxDo.CanUnbind)
 	require.Equal(t, "linuxdo-handle", summaries.LinuxDo.DisplayName)
 	require.NotEmpty(t, summaries.LinuxDo.SubjectHint)
 }
@@ -517,7 +517,7 @@ func TestGetProfileIdentitySummaries_DoesNotTreatCompatBackfilledEmailIdentityAs
 	require.Empty(t, repo.unboundProviders)
 }
 
-func TestUnbindUserAuthProviderRemovesProviderAndReturnsUpdatedProfile(t *testing.T) {
+func TestUnbindUserAuthProviderProtectsLinuxDoBinding(t *testing.T) {
 	repo := &mockUserRepo{
 		getByIDUser: &User{
 			ID:    12,
@@ -541,15 +541,10 @@ func TestUnbindUserAuthProviderRemovesProviderAndReturnsUpdatedProfile(t *testin
 
 	user, err := svc.UnbindUserAuthProvider(context.Background(), 12, "linuxdo")
 
-	require.NoError(t, err)
-	require.Equal(t, []string{"linuxdo"}, repo.unboundProviders)
-	require.Equal(t, int64(12), user.ID)
-	require.Equal(t, []int64{12}, invalidator.invalidatedUserIDs)
-
-	summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 12, user)
-	require.NoError(t, err)
-	require.False(t, summaries.LinuxDo.Bound)
-	require.True(t, summaries.LinuxDo.CanBind)
+	require.Nil(t, user)
+	require.ErrorIs(t, err, ErrLinuxDoIdentityUnbindProtected)
+	require.Empty(t, repo.unboundProviders)
+	require.Empty(t, invalidator.invalidatedUserIDs)
 }
 
 func TestGetProfileIdentitySummaries_HidesBindActionWhenProviderExplicitlyDisabled(t *testing.T) {

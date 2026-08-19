@@ -23,6 +23,14 @@ export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' 
 
 export type OrderType = 'balance' | 'subscription'
 
+export interface BalancePackage {
+  id: string
+  credit_amount: number
+  pay_amount: number
+  discount_rate: number
+  badge?: string
+}
+
 // ==================== Configuration ====================
 
 export interface PaymentConfig {
@@ -89,6 +97,10 @@ export interface CheckoutInfoResponse {
     starts_at?: string
     ends_at?: string
   }
+  balance_packages: BalancePackage[]
+  balance_discount_threshold: number
+  balance_discount_rate: number
+  balance_discount_available: boolean
 }
 
 // ==================== Orders ====================
@@ -182,6 +194,7 @@ export interface CreateOrderRequest {
   payment_type: string
   order_type: string
   plan_id?: number
+  balance_package_id?: string
   return_url?: string
   payment_source?: string
   openid?: string

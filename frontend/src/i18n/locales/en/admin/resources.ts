@@ -296,7 +296,7 @@ export default {
       amount: 'Amount ($)',
       ldc: 'LDC Redeem Code',
       ldcAmount: 'LDC Amount',
-      ldcHint: 'LDC codes use LinuxDO tiered rates: first $10 at 10:1, then 40:1.',
+      ldcHint: 'LDC codes use a flat rate of 40 LDC = $1.',
       value: 'Value',
       count: 'Count',
       generating: 'Generating...',

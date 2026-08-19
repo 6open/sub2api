@@ -537,8 +537,6 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 	if s.authCacheInvalidator != nil && balanceDiff != 0 {
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 	}
-	s.tryAccrueAffiliateRebateForAdminRecharge(ctx, userID, operation, balance)
-
 	if s.billingCacheService != nil {
 		go func() {
 			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

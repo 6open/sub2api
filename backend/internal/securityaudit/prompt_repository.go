@@ -78,12 +78,13 @@ type JobRepository interface {
 }
 
 type PostgreSQLRepository struct {
-	db    *sql.DB
-	clock Clock
+	db        *sql.DB
+	clock     Clock
+	encryptor SecretEncryptor
 }
 
-func NewPostgreSQLRepository(db *sql.DB) *PostgreSQLRepository {
-	return &PostgreSQLRepository{db: db, clock: realClock{}}
+func NewPostgreSQLRepository(db *sql.DB, encryptor SecretEncryptor) *PostgreSQLRepository {
+	return &PostgreSQLRepository{db: db, clock: realClock{}, encryptor: encryptor}
 }
 
 func (r *PostgreSQLRepository) CreateStagingWithCapacity(ctx context.Context, snapshot PromptSnapshot, configVersion int64, maxAttempts, capacity int) (*Job, error) {
@@ -195,6 +196,9 @@ func (r *PostgreSQLRepository) Complete(ctx context.Context, job *Job, result *N
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
+	if shouldRetainRiskPrompt(result) {
+		_ = r.RecordRiskPrompt(ctx, riskPromptFromSnapshot(RiskPromptSourceGuard, job.Snapshot))
+	}
 	return event, nil
 }
 
@@ -301,7 +305,47 @@ func (r *PostgreSQLRepository) RecordBlocking(ctx context.Context, snapshot Prom
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
+	if shouldRetainRiskPrompt(result) {
+		_ = r.RecordRiskPrompt(ctx, riskPromptFromSnapshot(RiskPromptSourceGuard, snapshot))
+	}
 	return event, nil
+}
+
+func shouldRetainRiskPrompt(result *NormalizedResult) bool {
+	return result != nil && (result.Action == ActionBlock || result.Decision == EventCritical)
+}
+
+func riskPromptFromSnapshot(source string, snapshot PromptSnapshot) RiskPromptInput {
+	return RiskPromptInput{Source: source, RequestID: snapshot.RequestID, UserID: snapshot.UserID,
+		APIKeyID: snapshot.APIKeyID, GroupID: cloneInt64Ptr(snapshot.GroupID), Model: snapshot.Model,
+		Prompt: snapshot.FullPrompt}
+}
+
+// RecordRiskPrompt is deliberately independent of the audit event transaction.
+// Callers treat failures as best-effort so retention can never block traffic.
+func (r *PostgreSQLRepository) RecordRiskPrompt(ctx context.Context, in RiskPromptInput) error {
+	if r == nil || r.db == nil || r.encryptor == nil || strings.TrimSpace(in.Prompt) == "" {
+		return nil
+	}
+	redacted, hash, truncated := prepareRiskPrompt(in.Prompt)
+	ciphertext, err := r.encryptor.Encrypt(redacted)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO risk_prompt_records
+			(source,request_id,user_id,api_key_id,group_id,model,prompt_ciphertext,prompt_hash,truncated,expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '7 days')`,
+		in.Source, in.RequestID, nullableID(in.UserID), nullableID(in.APIKeyID), in.GroupID,
+		in.Model, ciphertext, hash, truncated)
+	if err != nil {
+		return err
+	}
+	// Bounded opportunistic cleanup avoids another hot-path worker and is safe
+	// to fail independently after the current record has been committed.
+	_, _ = r.db.ExecContext(ctx, `DELETE FROM risk_prompt_records WHERE id IN (
+		SELECT id FROM risk_prompt_records WHERE expires_at < NOW() ORDER BY expires_at LIMIT 500)`)
+	return nil
 }
 
 // shouldStorePromptAuditEvent keeps store_pass_events scoped to safe results.
@@ -359,7 +403,7 @@ func insertEvent(ctx context.Context, queryer sqlQueryer, jobID int64, snapshot 
 		snapshot.RedactedPreview, normalizeStage(snapshot.Stage), string(result.Decision), string(result.RiskLevel),
 		string(result.Action), categories, matched, scores, evidenceJSON, result.ScannerBackend, result.ScannerVersion,
 		result.GuardEndpointID, result.PolicyID, result.PolicyVersion, configVersion, result.ChunkTotal, result.LatencyMS,
-		snapshot.FullPrompt)
+		"")
 	return scanEvent(row, true)
 }
 

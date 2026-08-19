@@ -301,7 +301,7 @@ export default {
       amount: '金额 ($)',
       ldc: 'LDC兑换码',
       ldcAmount: 'LDC 数量',
-      ldcHint: 'LDC 码按 LinuxDO 账号阶梯汇率兑换：前 10 刀 10:1，之后 40:1。',
+      ldcHint: 'LDC 码统一按 40 LDC = 1 刀兑换。',
       value: '面值',
       count: '数量',
       generate: '生成',

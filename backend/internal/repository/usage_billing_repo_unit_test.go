@@ -99,6 +99,86 @@ func TestApplyUsageBillingEffects_FlagsBalanceOverdraft(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestConsumeNonRebatableAffiliateBalance_ExcludesRewardFundedUsage(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	mock.ExpectQuery("(?s)WITH current AS .*UPDATE users.*non_rebatable_balance").
+		WithArgs(int64(42), 2.0).
+		WillReturnRows(sqlmock.NewRows([]string{"consumed"}).AddRow(0.5))
+	mock.ExpectCommit()
+
+	eligible, err := consumeNonRebatableAffiliateBalance(ctx, tx, 42, 2, 100)
+	require.NoError(t, err)
+	require.InDelta(t, 75, eligible, 0.000001)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyUsageAffiliateRebate_UsesFivePercentStandardCost(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	mock.ExpectQuery("(?s)WITH current AS .*UPDATE users.*non_rebatable_balance").
+		WithArgs(int64(42), 15.0).
+		WillReturnRows(sqlmock.NewRows([]string{"consumed"}).AddRow(0.0))
+	mock.ExpectExec("(?s)WITH relation AS .*INSERT INTO user_affiliate_ledger.*'accrue_usage'.*UPDATE user_affiliates").
+		WithArgs(int64(42), "req-1", 100.0, 5.0, 24, 0, 0.0, int64(7)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err = applyUsageAffiliateRebate(ctx, tx, &service.UsageBillingCommand{
+		RequestID:                    "req-1",
+		APIKeyID:                     7,
+		UserID:                       42,
+		BalanceCost:                  15,
+		AffiliateEnabled:             true,
+		AffiliateStandardCost:        100,
+		AffiliateRebateRatePercent:   5,
+		AffiliateRebateFreezeHours:   24,
+		AffiliateRebateDurationDays:  0,
+		AffiliateRebatePerInviteeCap: 0,
+	})
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyUsageAffiliateRebate_DisabledStillConsumesRewardBucket(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	mock.ExpectQuery("(?s)WITH current AS .*UPDATE users.*non_rebatable_balance").
+		WithArgs(int64(42), 1.0).
+		WillReturnRows(sqlmock.NewRows([]string{"consumed"}).AddRow(1.0))
+	mock.ExpectCommit()
+
+	err = applyUsageAffiliateRebate(ctx, tx, &service.UsageBillingCommand{
+		UserID:                42,
+		BalanceCost:           1,
+		AffiliateStandardCost: 10,
+		AffiliateEnabled:      false,
+	})
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestDeductUsageBillingBalance_ReturnsUserNotFoundWhenNoUserUpdated(t *testing.T) {
 	ctx := context.Background()
 	db, mock, err := sqlmock.New()

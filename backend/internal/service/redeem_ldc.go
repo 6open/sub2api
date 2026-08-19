@@ -3,20 +3,16 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
-	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 const (
-	ldcCodeKind      = "ldc"
-	ldcPromoUSDLimit = 10.0
-	ldcPromoRate     = 10.0
-	ldcNormalRate    = 40.0
+	ldcCodeKind = "ldc"
+	ldcRate     = 40.0
 )
 
 type ldcCodeMetadata struct {
@@ -32,22 +28,11 @@ type ldcCodeMetadata struct {
 	CreditedUSD             float64 `json:"credited_usd,omitempty"`
 }
 
-func calculateLDCCodeCreditUSD(ldcAmount, issuedUSD float64) float64 {
+func calculateLDCCodeCreditUSD(ldcAmount float64) float64 {
 	if ldcAmount <= 0 {
 		return 0
 	}
-	if issuedUSD < 0 {
-		issuedUSD = 0
-	}
-
-	remainingPromoUSD := ldcPromoUSDLimit - issuedUSD
-	if remainingPromoUSD < 0 {
-		remainingPromoUSD = 0
-	}
-
-	promoLDC := math.Min(ldcAmount, remainingPromoUSD*ldcPromoRate)
-	normalLDC := ldcAmount - promoLDC
-	return promoLDC/ldcPromoRate + normalLDC/ldcNormalRate
+	return ldcAmount / ldcRate
 }
 
 func parseLDCCodeMetadata(notes string) (ldcCodeMetadata, bool) {
@@ -106,36 +91,4 @@ func (s *RedeemService) validateLDCUserLinuxDoBinding(ctx context.Context, clien
 		return infraerrors.BadRequest("LDC_REDEEM_LINUXDO_SUBJECT_MISMATCH", "this LDC redeem code can only be used by the LinuxDO account that purchased it")
 	}
 	return nil
-}
-
-func (s *RedeemService) issuedLDCUSDForUser(ctx context.Context, client *dbent.Client, userID int64) (float64, error) {
-	codes, err := client.RedeemCode.Query().
-		Where(
-			redeemcode.StatusEQ(StatusUsed),
-			redeemcode.UsedByEQ(userID),
-			redeemcode.TypeIn(RedeemTypeBalance, AdjustmentTypeAdminBalance),
-			redeemcode.NotesContains(`"code_kind":"ldc"`),
-		).
-		All(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	total := 0.0
-	for _, code := range codes {
-		notes := ""
-		if code.Notes != nil {
-			notes = *code.Notes
-		}
-		total += issuedUSDFromLDCNotes(notes)
-	}
-	return total, nil
-}
-
-func issuedUSDFromLDCNotes(notes string) float64 {
-	meta, ok := parseLDCCodeMetadata(notes)
-	if !ok || meta.CreditedUSD <= 0 {
-		return 0
-	}
-	return meta.CreditedUSD
 }

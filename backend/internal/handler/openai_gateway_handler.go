@@ -37,6 +37,7 @@ type OpenAIGatewayHandler struct {
 	errorPassthroughService    *service.ErrorPassthroughService
 	contentModerationService   *service.ContentModerationService
 	securityAuditCoordinator   *securityaudit.Coordinator
+	riskPromptRecorder         securityaudit.RiskPromptRecorder
 	grokMediaEligibilityProber grokMediaEligibilityProber
 	opsService                 *service.OpsService
 	concurrencyHelper          *ConcurrencyHelper
@@ -395,7 +396,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
-	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted, reqLog)
+	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqModel, reqStream, &streamStarted, reqLog)
 	if !acquired {
 		return
 	}
@@ -979,7 +980,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
-	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted, reqLog)
+	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqModel, reqStream, &streamStarted, reqLog)
 	if !acquired {
 		return
 	}
@@ -1367,6 +1368,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesUserSlot(
 	c *gin.Context,
 	userID int64,
 	userConcurrency int,
+	model string,
 	reqStream bool,
 	streamStarted *bool,
 	reqLog *zap.Logger,
@@ -1378,7 +1380,29 @@ func (h *OpenAIGatewayHandler) acquireResponsesUserSlot(
 		h.handleConcurrencyError(c, err, "user", *streamStarted)
 		return nil, false
 	}
-	return wrapReleaseOnDone(ctx, userReleaseFunc), true
+	userReleaseFunc = wrapReleaseOnDone(ctx, userReleaseFunc)
+	if !isLunaConcurrencyLimitedModel(model) {
+		return userReleaseFunc, true
+	}
+	lunaReleaseFunc, lunaAcquired, err := h.concurrencyHelper.TryAcquireUserSlot(ctx, lunaConcurrencySlotID(userID), lunaUserConcurrency)
+	if err != nil {
+		if userReleaseFunc != nil {
+			userReleaseFunc()
+		}
+		reqLog.Warn("openai.luna_user_slot_acquire_failed", zap.Error(err))
+		h.handleStreamingAwareError(c, http.StatusInternalServerError, "api_error", "Failed to acquire Luna concurrency slot", *streamStarted)
+		return nil, false
+	}
+	if !lunaAcquired {
+		if userReleaseFunc != nil {
+			userReleaseFunc()
+		}
+		reqLog.Info("openai.luna_concurrency_rejected", zap.Int("limit", lunaUserConcurrency))
+		h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Luna allows at most 2 concurrent requests per user", *streamStarted)
+		return nil, false
+	}
+	lunaReleaseFunc = wrapReleaseOnDone(ctx, lunaReleaseFunc)
+	return combineReleaseFuncs(userReleaseFunc, lunaReleaseFunc), true
 }
 
 // openAISlotAcquireResult 是账号槽位获取的三态结果。
@@ -1747,6 +1771,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	channelMappingWS, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, reqModel)
 
 	var currentUserRelease func()
+	var currentLunaRelease func()
 	var currentAccountRelease func()
 	releaseAccountSlot := func() {
 		if currentAccountRelease != nil {
@@ -1756,6 +1781,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 	releaseTurnSlots := func() {
 		releaseAccountSlot()
+		if currentLunaRelease != nil {
+			currentLunaRelease()
+			currentLunaRelease = nil
+		}
 		if currentUserRelease != nil {
 			currentUserRelease()
 			currentUserRelease = nil
@@ -1775,6 +1804,20 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		return
 	}
 	currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
+	if isLunaConcurrencyLimitedModel(reqModel) {
+		lunaReleaseFunc, lunaAcquired, lunaErr := h.concurrencyHelper.TryAcquireUserSlot(ctx, lunaConcurrencySlotID(subject.UserID), lunaUserConcurrency)
+		if lunaErr != nil {
+			releaseTurnSlots()
+			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire Luna concurrency slot")
+			return
+		}
+		if !lunaAcquired {
+			releaseTurnSlots()
+			closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "Luna allows at most 2 concurrent requests per user")
+			return
+		}
+		currentLunaRelease = wrapReleaseOnDone(ctx, lunaReleaseFunc)
+	}
 	ensureUserSlotHeld := func() bool {
 		if currentUserRelease != nil {
 			return true
@@ -1790,6 +1833,20 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return false
 		}
 		currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
+		if isLunaConcurrencyLimitedModel(reqModel) {
+			lunaReleaseFunc, lunaAcquired, lunaErr := h.concurrencyHelper.TryAcquireUserSlot(ctx, lunaConcurrencySlotID(subject.UserID), lunaUserConcurrency)
+			if lunaErr != nil {
+				releaseTurnSlots()
+				closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire Luna concurrency slot")
+				return false
+			}
+			if !lunaAcquired {
+				releaseTurnSlots()
+				closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "Luna allows at most 2 concurrent requests per user")
+				return false
+			}
+			currentLunaRelease = wrapReleaseOnDone(ctx, lunaReleaseFunc)
+		}
 		return true
 	}
 
@@ -2088,20 +2145,44 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if !userAcquired {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "too many concurrent requests, please retry later", nil)
 				}
+				var lunaReleaseFunc func()
+				if isLunaConcurrencyLimitedModel(reqModel) {
+					var lunaAcquired bool
+					lunaReleaseFunc, lunaAcquired, err = h.concurrencyHelper.TryAcquireUserSlot(ctx, lunaConcurrencySlotID(subject.UserID), lunaUserConcurrency)
+					if err != nil {
+						if userReleaseFunc != nil {
+							userReleaseFunc()
+						}
+						return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire Luna concurrency slot", err)
+					}
+					if !lunaAcquired {
+						if userReleaseFunc != nil {
+							userReleaseFunc()
+						}
+						return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "Luna allows at most 2 concurrent requests per user", nil)
+					}
+				}
 				accountReleaseFunc, accountAcquired, err := h.concurrencyHelper.TryAcquireAccountSlot(ctx, account.ID, accountMaxConcurrency)
 				if err != nil {
+					if lunaReleaseFunc != nil {
+						lunaReleaseFunc()
+					}
 					if userReleaseFunc != nil {
 						userReleaseFunc()
 					}
 					return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire account concurrency slot", err)
 				}
 				if !accountAcquired {
+					if lunaReleaseFunc != nil {
+						lunaReleaseFunc()
+					}
 					if userReleaseFunc != nil {
 						userReleaseFunc()
 					}
 					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "account is busy, please retry later", nil)
 				}
 				currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
+				currentLunaRelease = wrapReleaseOnDone(ctx, lunaReleaseFunc)
 				currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
 				return nil
 			},
@@ -3210,6 +3291,10 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 	if apiKey != nil {
 		apiKeyPrefix = keyPrefix(apiKey.Key, 8)
 	}
+	latestUserPrompt := ""
+	if promptValue, ok := c.Get(securityAuditLatestUserPromptContextKey); ok {
+		latestUserPrompt, _ = promptValue.(string)
+	}
 	opsMeta := cyberPolicyOpsErrorMeta{
 		RequestID:       requestID,
 		ClientRequestID: clientRequestID,
@@ -3246,6 +3331,12 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				UpstreamStatus:  mark.UpstreamStatus,
 				UpstreamInTok:   mark.UpstreamInTok,
 				UpstreamOutTok:  mark.UpstreamOutTok,
+			})
+		}
+		if h.riskPromptRecorder != nil && strings.TrimSpace(latestUserPrompt) != "" {
+			_ = h.riskPromptRecorder.RecordRiskPrompt(ctx, securityaudit.RiskPromptInput{
+				Source: securityaudit.RiskPromptSourceCyberPolicy, RequestID: requestID,
+				UserID: userID, APIKeyID: apiKeyID, GroupID: groupID, Model: model, Prompt: latestUserPrompt,
 			})
 		}
 		if forwardErrored && gwSvc != nil {

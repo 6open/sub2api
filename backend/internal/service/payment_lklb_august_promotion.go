@@ -36,14 +36,18 @@ type LKLBPaymentPromotion struct {
 
 func lklbAugustPromotionWindow() (time.Time, time.Time) {
 	return time.Date(2026, time.August, 5, 0, 0, 0, 0, shanghaiLocation),
-		time.Date(2026, time.August, 9, 0, 0, 0, 0, shanghaiLocation)
+		time.Date(2026, time.August, 10, 0, 0, 0, 0, shanghaiLocation)
+}
+
+func isLKLBPromotionActive(now time.Time) bool {
+	start, end := lklbAugustPromotionWindow()
+	return !now.Before(start) && now.Before(end)
 }
 
 func isLKLBAlipayPromotionRequest(req CreateOrderRequest, now time.Time) bool {
-	start, end := lklbAugustPromotionWindow()
 	return req.OrderType == payment.OrderTypeBalance &&
 		payment.GetBasePaymentType(req.PaymentType) == payment.TypeAlipay &&
-		!now.Before(start) && now.Before(end)
+		isLKLBPromotionActive(now)
 }
 
 func lklbPromotionSnapshot(snapshot map[string]any, payAmount float64) map[string]any {
@@ -124,7 +128,7 @@ func lklbPromotionEnd() time.Time {
 func (s *PaymentService) GetLKLBPaymentPromotion(ctx context.Context, userID int64, now time.Time) (LKLBPaymentPromotion, error) {
 	start, end := lklbAugustPromotionWindow()
 	result := LKLBPaymentPromotion{
-		Active: !now.Before(start) && now.Before(end), ID: lklbAugustPromotionID, PaymentType: payment.TypeAlipay,
+		Active: isLKLBPromotionActive(now), ID: lklbAugustPromotionID, PaymentType: payment.TypeAlipay,
 		Multiplier: lklbAugustPromotionMultiplier, PayLimit: lklbAugustPromotionPayLimit, StartsAt: start, EndsAt: end,
 	}
 	orders, err := s.entClient.PaymentOrder.Query().Where(

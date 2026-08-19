@@ -296,6 +296,14 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	}
 
 	cmd := buildUsageBillingCommand(requestID, usageLog, p)
+	if cmd != nil && !p.IsSubscriptionBill && p.Cost != nil && p.Cost.ActualCost > 0 && p.Cost.TotalCost > 0 && deps.settingService != nil {
+		cmd.AffiliateEnabled = deps.settingService.IsAffiliateEnabled(ctx)
+		cmd.AffiliateStandardCost = p.Cost.TotalCost
+		cmd.AffiliateRebateRatePercent = deps.settingService.GetAffiliateRebateRatePercent(ctx)
+		cmd.AffiliateRebateFreezeHours = deps.settingService.GetAffiliateRebateFreezeHours(ctx)
+		cmd.AffiliateRebateDurationDays = deps.settingService.GetAffiliateRebateDurationDays(ctx)
+		cmd.AffiliateRebatePerInviteeCap = deps.settingService.GetAffiliateRebatePerInviteeCap(ctx)
+	}
 	if cmd == nil || cmd.RequestID == "" || repo == nil {
 		postUsageBilling(ctx, p, deps)
 		return true, nil
@@ -508,6 +516,7 @@ type billingDeps struct {
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	cfg                   *config.Config
+	settingService        *SettingService
 }
 
 func (s *GatewayService) billingDeps() *billingDeps {
@@ -520,6 +529,7 @@ func (s *GatewayService) billingDeps() *billingDeps {
 		balanceNotifyService:  s.balanceNotifyService,
 		userPlatformQuotaRepo: s.userPlatformQuotaRepo,
 		cfg:                   s.cfg,
+		settingService:        s.settingService,
 	}
 }
 

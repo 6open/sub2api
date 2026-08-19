@@ -43,6 +43,10 @@ var (
 		"IDENTITY_UNBIND_LAST_METHOD",
 		"bind another sign-in method before unbinding this provider",
 	)
+	ErrLinuxDoIdentityUnbindProtected = infraerrors.Conflict(
+		"LINUXDO_IDENTITY_UNBIND_PROTECTED",
+		"LinuxDO bindings cannot be removed because promotional benefits are tied to the identity",
+	)
 )
 
 const (
@@ -425,6 +429,9 @@ func (s *UserService) UnbindUserAuthProviderWithResult(ctx context.Context, user
 	if provider == "" || provider == "email" {
 		return nil, false, ErrIdentityProviderInvalid
 	}
+	if provider == "linuxdo" {
+		return nil, false, ErrLinuxDoIdentityUnbindProtected
+	}
 
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -779,7 +786,7 @@ func (s *UserService) buildProviderIdentitySummary(provider string, user *User, 
 }
 
 func (s *UserService) canUnbindProvider(provider string, user *User, records []UserAuthIdentityRecord) bool {
-	if provider == "" || provider == "email" || len(filterUserAuthIdentities(records, provider)) == 0 {
+	if provider == "" || provider == "email" || provider == "linuxdo" || len(filterUserAuthIdentities(records, provider)) == 0 {
 		return false
 	}
 

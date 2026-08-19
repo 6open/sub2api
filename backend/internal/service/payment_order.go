@@ -60,7 +60,18 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 		orderAmount = plan.Price
 		limitAmount = plan.Price
 	} else if req.OrderType == payment.OrderTypeBalance {
-		orderAmount = calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
+		promotionActive := isLKLBPromotionActive(orderCreatedAt)
+		balancePackage, packageErr := resolveBalancePackage(req.BalancePackageID, cfg.BalanceRechargeMultiplier, promotionActive)
+		if packageErr != nil {
+			return nil, packageErr
+		}
+		if balancePackage != nil {
+			orderAmount = balancePackage.CreditAmount
+			limitAmount = calculateBalancePaymentBase(orderAmount, cfg.BalanceRechargeMultiplier, promotionActive)
+		} else {
+			orderAmount = calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
+			limitAmount = calculateBalancePaymentBase(orderAmount, cfg.BalanceRechargeMultiplier, promotionActive)
+		}
 	}
 	feeRate := cfg.RechargeFeeRate
 	if isLKLBAlipayPromotionRequest(req, orderCreatedAt) {
@@ -123,12 +134,26 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}
 	if req.OrderType == payment.OrderTypeSubscription {
+		if strings.TrimSpace(req.BalancePackageID) != "" {
+			return nil, infraerrors.BadRequest("INVALID_BALANCE_PACKAGE", "balance packages cannot be used for subscription orders")
+		}
 		return s.validateSubOrder(ctx, req)
 	}
-	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
+	validationAmount := req.Amount
+	if strings.TrimSpace(req.BalancePackageID) != "" {
+		pkg, err := resolveBalancePackage(req.BalancePackageID, cfg.BalanceRechargeMultiplier, isLKLBPromotionActive(time.Now()))
+		if err != nil {
+			return nil, err
+		}
+		validationAmount = calculateBalancePaymentBase(pkg.CreditAmount, cfg.BalanceRechargeMultiplier, isLKLBPromotionActive(time.Now()))
+	} else {
+		creditedAmount := calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
+		validationAmount = calculateBalancePaymentBase(creditedAmount, cfg.BalanceRechargeMultiplier, isLKLBPromotionActive(time.Now()))
+	}
+	if math.IsNaN(validationAmount) || math.IsInf(validationAmount, 0) || validationAmount <= 0 {
 		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
 	}
-	if (cfg.MinAmount > 0 && req.Amount < cfg.MinAmount) || (cfg.MaxAmount > 0 && req.Amount > cfg.MaxAmount) {
+	if (cfg.MinAmount > 0 && validationAmount < cfg.MinAmount) || (cfg.MaxAmount > 0 && validationAmount > cfg.MaxAmount) {
 		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount out of range").
 			WithMetadata(map[string]string{"min": fmt.Sprintf("%.2f", cfg.MinAmount), "max": fmt.Sprintf("%.2f", cfg.MaxAmount)})
 	}
@@ -175,6 +200,9 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		return nil, err
 	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
+	if req.OrderType == payment.OrderTypeBalance && !isLKLBPromotionActive(orderCreatedAt) {
+		providerSnapshot = mergePricingSnapshot(providerSnapshot, buildBalanceDiscountPricingSnapshot(orderAmount, limitAmount))
+	}
 	if err := s.applyLKLBPromotionInTx(ctx, tx, req, orderCreatedAt, payAmount, &orderAmount, &exp, &providerSnapshot); err != nil {
 		return nil, err
 	}

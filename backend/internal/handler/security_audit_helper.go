@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"crypto/subtle"
+	"encoding/json"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -12,6 +16,48 @@ import (
 )
 
 const securityAuditCompletedContextKey = "sub2api.security_audit.completed"
+const securityAuditLatestUserPromptContextKey = "sub2api.security_audit.latest_user_prompt"
+const internalSecurityAuditBypassHeader = "X-Sub2api-Internal-Audit"
+const defaultInternalSecurityAuditBypassFile = "/app/data/prompt-audit-internal-bypass.json"
+
+type internalSecurityAuditBypassConfig struct {
+	Secret   string `json:"secret"`
+	APIKeyID int64  `json:"api_key_id"`
+}
+
+func loadInternalSecurityAuditBypassConfig() internalSecurityAuditBypassConfig {
+	config := internalSecurityAuditBypassConfig{Secret: strings.TrimSpace(os.Getenv("PROMPT_AUDIT_INTERNAL_BYPASS_SECRET"))}
+	config.APIKeyID, _ = strconv.ParseInt(strings.TrimSpace(os.Getenv("PROMPT_AUDIT_INTERNAL_API_KEY_ID")), 10, 64)
+	if config.Secret != "" || config.APIKeyID > 0 {
+		return config
+	}
+	path := strings.TrimSpace(os.Getenv("PROMPT_AUDIT_INTERNAL_BYPASS_FILE"))
+	if path == "" {
+		path = defaultInternalSecurityAuditBypassFile
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || len(raw) > 4096 || json.Unmarshal(raw, &config) != nil {
+		return internalSecurityAuditBypassConfig{}
+	}
+	config.Secret = strings.TrimSpace(config.Secret)
+	return config
+}
+
+func validInternalSecurityAuditBypass(c *gin.Context, apiKey *service.APIKey) bool {
+	if c == nil || apiKey == nil {
+		return false
+	}
+	config := loadInternalSecurityAuditBypassConfig()
+	if config.APIKeyID <= 0 || apiKey.ID != config.APIKeyID {
+		return false
+	}
+	expected := config.Secret
+	provided := strings.TrimSpace(c.GetHeader(internalSecurityAuditBypassHeader))
+	if len(expected) < 32 || len(provided) != len(expected) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
+}
 
 // cachesSecurityAuditCompletion reports whether a successful audit may be
 // reused for the rest of the gin request. WebSocket turns share one Context
@@ -50,6 +96,12 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 	if c == nil || c.Request == nil {
 		return nil
 	}
+	if validInternalSecurityAuditBypass(c, apiKey) {
+		if reqLog != nil {
+			reqLog.Info("security_audit.internal_bypass", zap.String("stage", strings.TrimSpace(stage)))
+		}
+		return nil
+	}
 	cacheCompletion := cachesSecurityAuditCompletion(stage)
 	if cacheCompletion {
 		if completed, exists := c.Get(securityAuditCompletedContextKey); exists && completed == true {
@@ -76,6 +128,9 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		return &decision
 	}
 	request := buildSecurityAuditRequest(c, apiKey, subject, protocol, model, body, stage)
+	if latestPrompt, err := securityaudit.ExtractLatestUserPrompt(protocol, body); err == nil {
+		c.Set(securityAuditLatestUserPromptContextKey, latestPrompt)
+	}
 	if reqLog != nil {
 		reqLog.Info("security_audit.gateway_check_start",
 			zap.String("request_id", request.RequestID), zap.Int64("user_id", request.UserID),

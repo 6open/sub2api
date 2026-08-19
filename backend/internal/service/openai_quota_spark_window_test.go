@@ -27,9 +27,17 @@ import (
 // stubQuotaAccountRepo 是多账号 AccountRepository stub，仅实现 GetByID。
 type stubQuotaAccountRepo struct {
 	AccountRepository
-	accounts       map[int64]*Account
-	extraUpdates   map[int64]map[string]any
-	extraUpdateErr error
+	accounts            map[int64]*Account
+	extraUpdates        map[int64]map[string]any
+	extraUpdateErr      error
+	clearObservedCalls  int
+	clearObservedResult bool
+	clearObservedErr    error
+}
+
+func (r *stubQuotaAccountRepo) ClearOpenAIRateLimitIfObserved(_ context.Context, _ int64, _, _ time.Time) (bool, error) {
+	r.clearObservedCalls++
+	return r.clearObservedResult, r.clearObservedErr
 }
 
 func (r *stubQuotaAccountRepo) GetByID(_ context.Context, id int64) (*Account, error) {
@@ -97,6 +105,83 @@ func newQuotaRedirectingFactory(srv *httptest.Server) PrivacyClientFactory {
 		})
 		return c, nil
 	}
+}
+
+func TestOpenAIQuotaWindowsHealthyRequiresCompleteAvailableWindows(t *testing.T) {
+	healthy := &OpenAIQuotaUsage{RateLimit: &OpenAIRateLimit{
+		Allowed:         true,
+		PrimaryWindow:   &OpenAIRateLimitWindow{UsedPercent: 0},
+		SecondaryWindow: &OpenAIRateLimitWindow{UsedPercent: 99.9},
+	}}
+	require.True(t, openAIQuotaWindowsHealthy(healthy))
+
+	healthy.RateLimit.SecondaryWindow.UsedPercent = 100
+	require.False(t, openAIQuotaWindowsHealthy(healthy))
+	healthy.RateLimit.SecondaryWindow.UsedPercent = 0
+	healthy.RateLimit.LimitReached = true
+	require.False(t, openAIQuotaWindowsHealthy(healthy))
+	healthy.RateLimit.LimitReached = false
+	healthy.RateLimit.SecondaryWindow = nil
+	require.False(t, openAIQuotaWindowsHealthy(healthy))
+}
+
+func TestQueryUsageClearsObservedOpenAIRateLimitWhenWindowsRecovered(t *testing.T) {
+	now := time.Now().UTC()
+	resetAt := now.Add(24 * time.Hour)
+	account := &Account{
+		ID: 100, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
+		RateLimitedAt: &now, RateLimitResetAt: &resetAt,
+		Credentials: map[string]any{"chatgpt_account_id": "org-parent123"},
+	}
+	repo := &stubQuotaAccountRepo{
+		accounts:            map[int64]*Account{100: account},
+		clearObservedResult: true,
+	}
+	tokenCache := &stubQuotaTokenCache{tokens: map[string]string{OpenAITokenCacheKey(account): "fake-token"}}
+	tokenProvider := NewOpenAITokenProvider(repo, tokenCache, nil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		if strings.Contains(r.URL.Path, "rate-limit-reset-credits") {
+			_, _ = w.Write([]byte("{\"available_count\":0,\"credits\":[]}"))
+			return
+		}
+		_, _ = w.Write([]byte("{\"rate_limit\":{\"allowed\":true,\"limit_reached\":false,\"primary_window\":{\"used_percent\":0},\"secondary_window\":{\"used_percent\":0}}}"))
+	}))
+	defer srv.Close()
+
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	usage, err := svc.QueryUsage(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Equal(t, 1, repo.clearObservedCalls)
+}
+
+func TestQueryUsageKeepsObservedOpenAIRateLimitWhenWindowStillExhausted(t *testing.T) {
+	now := time.Now().UTC()
+	resetAt := now.Add(24 * time.Hour)
+	account := &Account{
+		ID: 100, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
+		RateLimitedAt: &now, RateLimitResetAt: &resetAt,
+		Credentials: map[string]any{"chatgpt_account_id": "org-parent123"},
+	}
+	repo := &stubQuotaAccountRepo{accounts: map[int64]*Account{100: account}}
+	tokenCache := &stubQuotaTokenCache{tokens: map[string]string{OpenAITokenCacheKey(account): "fake-token"}}
+	tokenProvider := NewOpenAITokenProvider(repo, tokenCache, nil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		if strings.Contains(r.URL.Path, "rate-limit-reset-credits") {
+			_, _ = w.Write([]byte("{\"available_count\":0,\"credits\":[]}"))
+			return
+		}
+		_, _ = w.Write([]byte("{\"rate_limit\":{\"allowed\":false,\"limit_reached\":true,\"primary_window\":{\"used_percent\":100},\"secondary_window\":{\"used_percent\":0}}}"))
+	}))
+	defer srv.Close()
+
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	usage, err := svc.QueryUsage(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Zero(t, repo.clearObservedCalls)
 }
 
 // ── Part A: buildCodexSparkWindowExtraUpdates ─────────────────────────────────

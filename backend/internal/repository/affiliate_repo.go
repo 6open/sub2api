@@ -38,13 +38,13 @@ JOIN users u ON u.id = ua.user_id
 LEFT JOIN (
     SELECT user_id, COUNT(DISTINCT source_user_id)::integer AS rebated_invitee_count
     FROM user_affiliate_ledger
-    WHERE action = 'accrue' AND source_user_id IS NOT NULL
+    WHERE action IN ('accrue', 'accrue_usage') AND source_user_id IS NOT NULL
     GROUP BY user_id
 ) rebated ON rebated.user_id = ua.user_id
 LEFT JOIN (
     SELECT user_id, COALESCE(SUM(amount), 0)::double precision AS matured_frozen_quota
     FROM user_affiliate_ledger
-    WHERE action = 'accrue' AND frozen_until IS NOT NULL AND frozen_until <= NOW()
+    WHERE action IN ('accrue', 'accrue_usage') AND frozen_until IS NOT NULL AND frozen_until <= NOW()
     GROUP BY user_id
 ) matured ON matured.user_id = ua.user_id
 WHERE ua.user_id = $1
@@ -165,7 +165,7 @@ VALUES ($1, 'accrue', $2, $3, $4, NOW(), NOW())`, inviterID, amount, inviteeUser
 func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error) {
 	client := clientFromContext(ctx, r.client)
 	rows, err := client.QueryContext(ctx,
-		`SELECT COALESCE(SUM(amount), 0)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action = 'accrue'`,
+		`SELECT COALESCE(SUM(amount), 0)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action IN ('accrue', 'accrue_usage')`,
 		inviterID, inviteeUserID)
 	if err != nil {
 		return 0, fmt.Errorf("query accrued rebate from invitee: %w", err)
@@ -297,6 +297,13 @@ FROM cleared`, userID)
 		if affected == 0 {
 			return service.ErrUserNotFound
 		}
+		if _, err = txClient.ExecContext(txCtx, `
+UPDATE users
+SET non_rebatable_balance = non_rebatable_balance + $1,
+    updated_at = NOW()
+WHERE id = $2 AND deleted_at IS NULL`, transferred, userID); err != nil {
+			return fmt.Errorf("track non-rebatable affiliate balance: %w", err)
+		}
 
 		newBalance, err = queryUserBalance(txCtx, txClient, userID)
 		if err != nil {
@@ -357,7 +364,7 @@ LEFT JOIN users u ON u.id = ua.user_id
 LEFT JOIN user_affiliate_ledger ual
        ON ual.user_id = $1
       AND ual.source_user_id = ua.user_id
-      AND ual.action = 'accrue'
+      AND ual.action IN ('accrue', 'accrue_usage')
 WHERE ua.inviter_id = $1
 GROUP BY ua.user_id, u.email, u.username, ua.created_at
 ORDER BY ua.created_at DESC
@@ -426,7 +433,7 @@ JOIN user_affiliates inviter_aff ON inviter_aff.user_id = ua.inviter_id
 LEFT JOIN user_affiliate_ledger ual
        ON ual.user_id = ua.inviter_id
       AND ual.source_user_id = ua.user_id
-      AND ual.action = 'accrue'
+      AND ual.action IN ('accrue', 'accrue_usage')
 `+where+`
 GROUP BY ua.inviter_id, inviter.email, inviter.username, ua.user_id, invitee.email, invitee.username, inviter_aff.aff_code, ua.created_at
 `+orderBy+`

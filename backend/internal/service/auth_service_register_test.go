@@ -360,6 +360,31 @@ func TestLooksLikeGeneratedMicrosoftEmail(t *testing.T) {
 	require.False(t, looksLikeGeneratedMicrosoftEmail("debrawalker4434@gmail.com"))
 }
 
+func TestLooksLikeSuspiciousGmailDotEmail(t *testing.T) {
+	require.True(t, looksLikeSuspiciousGmailDotEmail("r.uth.t.o.ma.sj@gmail.com"))
+	require.True(t, looksLikeSuspiciousGmailDotEmail("samu.e.leru.tte.r.414@googlemail.com"))
+	require.True(t, looksLikeSuspiciousGmailDotEmail("t.ri.ck1.819.88@gmail.com"))
+	require.True(t, looksLikeSuspiciousGmailDotEmail("first.last@gmail.com"))
+	require.True(t, looksLikeSuspiciousGmailDotEmail("first.middle.last@gmail.com"))
+	require.False(t, looksLikeSuspiciousGmailDotEmail("firstlast@gmail.com"))
+	require.False(t, looksLikeSuspiciousGmailDotEmail("r.uth.t.o.ma.sj@example.com"))
+}
+
+func TestSignupRiskBlocksSuspiciousGmailWithoutPriorObservations(t *testing.T) {
+	blocked, reason := (&AuthService{}).isSignupRiskBlocked(context.Background(), "r.uth.t.o.ma.sj@gmail.com")
+	require.True(t, blocked)
+	require.Equal(t, "suspicious_gmail_dot_pattern", reason)
+}
+
+func TestSuspiciousGmailDotSignupBlocksRepeatedFingerprint(t *testing.T) {
+	const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124"
+	observations := []signupAuditObservation{{IP: "39.129.22.130", UserAgent: ua}}
+
+	require.True(t, isSuspectedBulkSignup("samu.e.leru.tte.r.414@gmail.com", "39.129.22.130", ua, observations))
+	require.True(t, isSuspectedBulkSignup("first.last@gmail.com", "39.129.22.130", ua, observations))
+	require.False(t, isSuspectedBulkSignup("samu.e.leru.tte.r.414@gmail.com", "39.129.23.130", ua, observations))
+}
+
 func TestIsSuspectedBulkSignup(t *testing.T) {
 	const ua = "Mozilla/5.0 (X11; Linux aarch64) Chrome/124"
 	observations := []signupAuditObservation{

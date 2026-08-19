@@ -11,15 +11,14 @@ describe('PaymentView static purchase entries', () => {
     expect(source).not.toContain('下单后请把 lklb 账号邮箱 / 用户名发给客服处理')
   })
 
-  it('renders a LinuxDO LDC purchase card with tiered promo copy', () => {
+  it('renders a LinuxDO LDC purchase card with flat-rate copy', () => {
     const source = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
 
     expect(source).toContain('LinuxDO 积分购买')
     expect(source).toContain('handleLinuxDoShopPurchase')
     expect(source).toContain('startLinuxDoShopHandoff')
-    expect(source).toContain('前 10刀额度享特惠')
-    expect(source).toContain('10 LDC = 1刀')
-    expect(source).toContain('超出后按 40 LDC = 1刀')
+    expect(source).toContain('统一按 40 LDC = 1刀兑换')
+    expect(source).not.toContain('10 LDC = 1刀')
     expect(source).not.toContain('支持自定义额度')
     expect(source).not.toContain('点击购买时再认证')
     expect(source).toContain('>购买</button>')
@@ -39,7 +38,7 @@ describe('PaymentView static purchase entries', () => {
     const source = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
 
     expect(source).toContain('支付宝限时直充 5 折')
-    expect(source).toContain('即刻起至8月8日，实付 ¥100 到账 $200')
+    expect(source).toContain('延长至8月9日，实付 ¥100 到账 $200')
     expect(source).toContain('promotionRemaining.toFixed(2)')
     expect(source).toContain('effectiveRechargeMultiplier')
     expect(source).toContain('validAmount.value <= promotionRemaining.value')

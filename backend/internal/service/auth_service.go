@@ -306,7 +306,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 }
 
 const bulkSignupLookback = 24 * time.Hour
-const generatedMicrosoftSignupBurstThreshold = 3
+const generatedSignupBurstThreshold = 3
 
 type signupAuditObservation struct {
 	IP        string
@@ -316,8 +316,11 @@ type signupAuditObservation struct {
 // isSignupRiskBlocked is deliberately fail-open: risk telemetry must
 // never turn a database issue into a registration outage.
 func (s *AuthService) isSignupRiskBlocked(ctx context.Context, email string) (bool, string) {
+	if looksLikeSuspiciousGmailDotEmail(email) {
+		return true, "suspicious_gmail_dot_pattern"
+	}
 	binding := SessionBindingFromContext(ctx)
-	if s == nil || s.entClient == nil || binding == nil || !looksLikeGeneratedMicrosoftEmail(email) {
+	if s == nil || s.entClient == nil || binding == nil || !looksLikeGeneratedSignupEmail(email) {
 		return false, ""
 	}
 	cutoff := time.Now().UTC().Add(-bulkSignupLookback)
@@ -339,13 +342,13 @@ func (s *AuthService) isSignupRiskBlocked(ctx context.Context, email string) (bo
 				logger.LegacyPrintf("service.auth", "[Auth] Failed to scan recent signup email: %v (continuing with fingerprint checks)", scanErr)
 				break
 			}
-			if looksLikeGeneratedMicrosoftEmail(recentEmail) {
+			if looksLikeGeneratedSignupEmail(recentEmail) {
 				generatedCount++
 			}
 		}
 		_ = recentEmailRows.Close()
-		if generatedCount >= generatedMicrosoftSignupBurstThreshold {
-			return true, "generated_microsoft_email_signup_burst"
+		if generatedCount >= generatedSignupBurstThreshold {
+			return true, "generated_email_signup_burst"
 		}
 	}
 
@@ -378,7 +381,7 @@ func (s *AuthService) isSignupRiskBlocked(ctx context.Context, email string) (bo
 	}
 
 	if isSuspectedBulkSignup(email, binding.IP, binding.UserAgent, observations) {
-		return true, "generated_microsoft_email_with_repeated_subnet_fingerprint"
+		return true, "generated_email_with_repeated_subnet_fingerprint"
 	}
 	return false, ""
 }
@@ -410,8 +413,20 @@ func looksLikeGeneratedMicrosoftEmail(email string) bool {
 	return true
 }
 
+func looksLikeSuspiciousGmailDotEmail(email string) bool {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(email)), "@")
+	if len(parts) != 2 || (parts[1] != "gmail.com" && parts[1] != "googlemail.com") {
+		return false
+	}
+	return strings.Contains(parts[0], ".")
+}
+
+func looksLikeGeneratedSignupEmail(email string) bool {
+	return looksLikeGeneratedMicrosoftEmail(email) || looksLikeSuspiciousGmailDotEmail(email)
+}
+
 func isSuspectedBulkSignup(email, currentIP, currentUserAgent string, observations []signupAuditObservation) bool {
-	if !looksLikeGeneratedMicrosoftEmail(email) {
+	if !looksLikeGeneratedSignupEmail(email) {
 		return false
 	}
 	currentNetwork, ok := signupNetwork(currentIP)
@@ -434,6 +449,9 @@ func isSuspectedBulkSignup(email, currentIP, currentUserAgent string, observatio
 		if strings.TrimSpace(observation.UserAgent) == strings.TrimSpace(currentUserAgent) {
 			sameFingerprint++
 		}
+	}
+	if looksLikeSuspiciousGmailDotEmail(email) && sameFingerprint >= 1 {
+		return true
 	}
 	return (sameNetwork >= 2 && sameFingerprint >= 1) || sameUserAgent >= 2
 }

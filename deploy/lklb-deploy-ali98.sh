@@ -297,9 +297,7 @@ curl -k -s -o /tmp/lklb-buy.html -w "buy=%{http_code}\n" "$PUBLIC_BASE_URL/buy"
 curl -k -s -o /tmp/lklb-paymentview.js "$PUBLIC_BASE_URL/assets/$PAYMENT_ASSET"
 
 grep -q "LinuxDO 积分购买" /tmp/lklb-paymentview.js
-grep -q "前 10刀额度享特惠" /tmp/lklb-paymentview.js
-grep -q "10 LDC = 1刀" /tmp/lklb-paymentview.js
-grep -q "超出后按 40 LDC = 1刀" /tmp/lklb-paymentview.js
+grep -q "统一按 40 LDC = 1刀兑换" /tmp/lklb-paymentview.js
 grep -q "自定义 LDC" /tmp/lklb-buy.html
 grep -q "输入 LDC" /tmp/lklb-buy.html
 echo "page_verify=ok PaymentView-$PAYMENT_ASSET"
