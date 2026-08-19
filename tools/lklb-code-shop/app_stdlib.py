@@ -42,6 +42,9 @@ SUB2API_BASE_URL=os.environ.get('SUB2API_BASE_URL','http://127.0.0.1:18080/api/v
 CUSTOM_MIN_USD=int(os.environ.get('CUSTOM_MIN_USD','1'))
 CUSTOM_MAX_USD=int(os.environ.get('CUSTOM_MAX_USD','100'))
 REDEEM_CODE_PREFIX=os.environ.get('REDEEM_CODE_PREFIX','LDC-')
+SALES_ENABLED=os.environ.get('SALES_ENABLED','true').strip().lower() in ('1','true','yes','on')
+
+SALES_PAUSED_MESSAGE='积分支付已暂停，请使用其他充值方式。'
 
 _credit_query_lock=threading.Lock()
 _credit_query_last_attempt={}
@@ -730,6 +733,9 @@ class H(BaseHTTPRequestHandler):
         sess=sign_session(merge_handoff_into_user({'sub':sub,'username':username,'name':user.get('name') or username,'avatar_url':user.get('avatar_url') or ''}, handoff))
         return redirect_bytes(st.get('next') or '/buy', [('Set-Cookie', cookie('lklb_session',sess)), ('Set-Cookie', clear_cookie('lklb_oauth_state'))])
     def buy(self,params):
+        if not SALES_ENABLED:
+            body="<div class='hero'><div><h1>LKLB LDC 充值</h1><p class='subtitle'>{}</p></div></div>".format(html.escape(SALES_PAUSED_MESSAGE))
+            return text_bytes(html_page('积分支付已暂停',body),200,'text/html; charset=utf-8')
         extra_headers=[]
         handoff_token=first(params,['handoff'])
         if handoff_token:
@@ -765,6 +771,8 @@ class H(BaseHTTPRequestHandler):
         body.append("</div><p class='foot'>从中转站进入并完成 LinuxDO 登录后，支付成功会优先自动到账；无法自动到账时生成兑换码兜底。</p>")
         return text_bytes(html_page('LKLB LDC 充值',''.join(body)),200,'text/html; charset=utf-8',extra_headers)
     def buy_start(self,params):
+        if not SALES_ENABLED:
+            return text_bytes(html_page('积分支付已暂停',"<h1>积分支付已暂停</h1><div class='err'>{}</div><a class='btn' href='/purchase'>返回充值页面</a>".format(html.escape(SALES_PAUSED_MESSAGE))),503,'text/html; charset=utf-8')
         if self.command not in ('POST','GET'): return redirect_bytes('/buy')
         user=self.current_user()
         if not user:
