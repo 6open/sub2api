@@ -58,7 +58,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if toolSchemaSanitized {
 		body = sanitizedToolBody
 	}
-	if account.IsOpenAI() && isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) {
+	forceResponsesLiteNormalize := account.IsOpenAIApiKey() && account.getExtraBool("openai_responses_lite_force_normalize")
+	if account.IsOpenAI() && (isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) || forceResponsesLiteNormalize) {
 		liteBody, changed, liteErr := normalizeOpenAIResponsesLiteToolsPayload(body)
 		if liteErr != nil {
 			setOpsUpstreamError(c, http.StatusBadRequest, liteErr.Error(), "")

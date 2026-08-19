@@ -317,7 +317,6 @@ func TestOpenAIGatewayServiceForward_NormalizesResponsesLiteForAPIKey(t *testing
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.144.1")
-	c.Request.Header.Set(responsesLiteHeader, "true")
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
@@ -331,6 +330,7 @@ func TestOpenAIGatewayServiceForward_NormalizesResponsesLiteForAPIKey(t *testing
 		ID: 502, Name: "responses-lite-apikey", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 		Concurrency: 1, Status: StatusActive, Schedulable: true, RateMultiplier: f64p(1),
 		Credentials: map[string]any{"api_key": "test-key", "base_url": "https://example.com/v1"},
+		Extra:       map[string]any{"openai_responses_lite_force_normalize": true},
 	}
 	body := []byte(`{
 		"model":"gpt-5.6-sol","stream":true,"instructions":"test",
