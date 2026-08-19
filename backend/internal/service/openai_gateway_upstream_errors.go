@@ -120,6 +120,9 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 	if upstreamStatusCode != http.StatusBadRequest && upstreamStatusCode != http.StatusServiceUnavailable {
 		return false
 	}
+	if isOpenAIExplicitOverloadError(upstreamMsg, upstreamBody) {
+		return true
+	}
 
 	hasOpenAIServerOverloadedCode := func(payload []byte) bool {
 		code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.code").String()))
@@ -164,7 +167,38 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 	return match(string(upstreamBody))
 }
 
+// Some compatible upstreams attach a stale context_length_exceeded code to an
+// explicit overload message. The message is the actionable failure signal.
+func isOpenAIExplicitOverloadError(upstreamMsg string, upstreamBody []byte) bool {
+	match := func(text string) bool {
+		lower := strings.ToLower(strings.TrimSpace(text))
+		if lower == "" {
+			return false
+		}
+		return strings.Contains(lower, "currently overloaded") ||
+			strings.Contains(lower, "server is overloaded") ||
+			strings.Contains(lower, "servers are overloaded") ||
+			strings.Contains(lower, "model is at capacity") ||
+			strings.Contains(lower, "model is currently at capacity")
+	}
+	if match(upstreamMsg) {
+		return true
+	}
+	if len(upstreamBody) == 0 {
+		return false
+	}
+	for _, path := range []string{"error.message", "response.error.message", "message"} {
+		if match(gjson.GetBytes(upstreamBody, path).String()) {
+			return true
+		}
+	}
+	return false
+}
+
 func isOpenAIContextWindowError(upstreamMsg string, upstreamBody []byte) bool {
+	if isOpenAIExplicitOverloadError(upstreamMsg, upstreamBody) {
+		return false
+	}
 	match := func(text string) bool {
 		lower := strings.ToLower(strings.TrimSpace(text))
 		if lower == "" {
