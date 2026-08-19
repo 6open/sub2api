@@ -289,6 +289,27 @@ func (s *OpenAIGatewayService) recordOpenAIAccountModelTransientFailure(account 
 	return state.recordFailure(account.ID, openAIAccountModelTransientModel(canonicalModel), now)
 }
 
+// recordOpenAIAPIKeyCapacityShedFailure applies a short, model-scoped circuit
+// break to external API-key relays that repeatedly shed capacity. OAuth
+// accounts keep the provider's request-scoped behavior, and no durable account
+// status is changed.
+func (s *OpenAIGatewayService) recordOpenAIAPIKeyCapacityShedFailure(account *Account, canonicalModel string) {
+	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
+		return
+	}
+	decision := s.recordOpenAIAccountModelTransientFailure(account, canonicalModel, time.Now())
+	if decision.Cooldown <= 0 {
+		return
+	}
+	slog.Warn("openai_apikey_capacity_shed_cooldown",
+		"account_id", account.ID,
+		"model", openAIAccountModelTransientModel(canonicalModel),
+		"failure_streak", decision.FailureStreak,
+		"cooldown_ms", decision.Cooldown.Milliseconds(),
+		"block_scope", "account_model",
+	)
+}
+
 func (s *OpenAIGatewayService) clearOpenAIAccountModelTransientState(accountID int64, model string) {
 	state := s.getOpenAIAccountModelTransientState()
 	if state == nil {
