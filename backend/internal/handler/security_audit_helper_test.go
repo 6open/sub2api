@@ -143,7 +143,7 @@ func TestRunSecurityAuditDoesNotCacheFailedWebSocketDecision(t *testing.T) {
 	_, cachedAfterFailure := c.Get(securityAuditWSDedupeContextKey)
 	second := runSecurityAudit(c, nil, coordinator, nil, nil, middleware2.AuthSubject{UserID: 7}, "openai_responses", "gpt-test", payload, "subsequent_turn")
 
-	require.False(t, first.AllowNextStage)
+	require.True(t, first.AllowNextStage, "audit unavailability must fail open")
 	require.False(t, cachedAfterFailure)
 	require.True(t, second.AllowNextStage)
 	require.Equal(t, int64(2), engine.evaluates.Load())

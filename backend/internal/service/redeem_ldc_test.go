@@ -346,7 +346,9 @@ func (r *ldcUserRepoStub) GetByEmail(context.Context, string) (*User, error) {
 	panic("unexpected call")
 }
 func (r *ldcUserRepoStub) GetFirstAdmin(context.Context) (*User, error) { panic("unexpected call") }
-func (r *ldcUserRepoStub) Update(context.Context, *User) error          { panic("unexpected call") }
+func (r *ldcUserRepoStub) Update(context.Context, *User, UserUpdateFields) error {
+	panic("unexpected call")
+}
 func (r *ldcUserRepoStub) Delete(context.Context, int64) error          { panic("unexpected call") }
 func (r *ldcUserRepoStub) GetUserAvatar(context.Context, int64) (*UserAvatar, error) {
 	panic("unexpected call")
@@ -377,6 +379,24 @@ func (r *ldcUserRepoStub) UpdateBalance(_ context.Context, _ int64, amount float
 		r.user.Balance += amount
 	}
 	return nil
+}
+func (r *ldcUserRepoStub) AdjustBalance(_ context.Context, _ int64, delta float64) (BalanceChange, error) {
+	old := 0.0
+	if r.user != nil {
+		old = r.user.Balance
+		r.user.Balance += delta
+	}
+	r.lastBalanceAmount = delta
+	r.updateBalanceCalls++
+	return BalanceChange{Old: old, New: old + delta}, nil
+}
+func (r *ldcUserRepoStub) SetBalance(_ context.Context, _ int64, value float64) (BalanceChange, error) {
+	old := 0.0
+	if r.user != nil {
+		old = r.user.Balance
+		r.user.Balance = value
+	}
+	return BalanceChange{Old: old, New: value}, nil
 }
 func (r *ldcUserRepoStub) DeductBalance(context.Context, int64, float64) error {
 	panic("unexpected call")
