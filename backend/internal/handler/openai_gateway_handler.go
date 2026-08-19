@@ -668,15 +668,22 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						)
 						return
 					}
+					if failoverErr.ShouldReportAccountScheduleFailure() {
+						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+					}
 					if !openAIForwardMayFailover(c, writerSizeBeforeForward, failoverErr) {
+						if failoverErr.RequestScopedTransient && sessionHash != "" {
+							if clearErr := h.gatewayService.ClearStickySession(c.Request.Context(), apiKey.GroupID, sessionHash); clearErr != nil {
+								reqLog.Warn("openai.sticky_clear_after_committed_capacity_failure_failed", zap.Int64("account_id", account.ID), zap.Error(clearErr))
+							} else {
+								reqLog.Info("openai.sticky_cleared_after_committed_capacity_failure", zap.Int64("account_id", account.ID))
+							}
+						}
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
 					if failoverErr.SafeToFailoverAfterWrite && c.Writer.Written() {
 						streamStarted = true
-					}
-					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)

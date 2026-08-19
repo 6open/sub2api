@@ -1025,7 +1025,7 @@ func isOpenAIUpstreamCapacityShedEvent(payload []byte) bool {
 	case "server_is_overloaded", "slow_down":
 		return true
 	default:
-		return false
+		return isOpenAIExplicitOverloadError("", payload)
 	}
 }
 
@@ -1049,8 +1049,13 @@ func sanitizeOpenAICapacityShedErrorCodeForClient(payload []byte) ([]byte, bool)
 	updated := payload
 	changed := false
 	for _, path := range []string{"response.error.code", "error.code"} {
-		switch strings.ToLower(strings.TrimSpace(gjson.GetBytes(updated, path).String())) {
+		code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(updated, path).String()))
+		switch code {
 		case "server_is_overloaded", "slow_down":
+		case "context_length_exceeded":
+			if !isOpenAIExplicitOverloadError("", payload) {
+				continue
+			}
 		default:
 			continue
 		}
@@ -1065,6 +1070,9 @@ func sanitizeOpenAICapacityShedErrorCodeForClient(payload []byte) ([]byte, bool)
 }
 
 func openAIStreamFailedEventSemanticStatus(payload []byte, message string) int {
+	if isOpenAIExplicitOverloadError(message, payload) {
+		return http.StatusServiceUnavailable
+	}
 	if isOpenAIContextWindowError(message, payload) {
 		return http.StatusBadRequest
 	}
@@ -1361,6 +1369,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	sawFailedEvent := false
 	semanticOutputSeen := false
 	failedMessage := ""
+	var failedFailoverErr *UpstreamFailoverError
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	// pendingLines 在首个可见输出前保留前导事件，确保无输出失败仍可安全 failover。
@@ -1462,7 +1471,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						UpstreamOutTok: usage.OutputTokens,
 					})
 				}
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				outputStarted := openAIStreamClientOutputStarted(c, clientOutputStarted)
+				if !outputStarted {
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
 						// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
 						// antigravity 先例），否则透传命中的 failed 在监控中不可见。
@@ -1481,6 +1491,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						return resultWithUsage(),
 							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage, resp.Header)
 					}
+				} else if isOpenAIUpstreamCapacityShedEvent(dataBytes) {
+					failedFailoverErr = s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage, resp.Header)
 				}
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
@@ -1552,6 +1564,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			return resultWithUsage(), nil
 		}
 		if sawFailedEvent {
+			if failedFailoverErr != nil {
+				return resultWithUsage(), failedFailoverErr
+			}
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -1582,6 +1597,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		return resultWithUsage(), fmt.Errorf("stream read error: %w", err)
 	}
 	if sawFailedEvent {
+		if failedFailoverErr != nil {
+			return resultWithUsage(), failedFailoverErr
+		}
 		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 	}
 	if !clientDisconnected && !sawDone && !sawTerminalEvent && ctx.Err() == nil {

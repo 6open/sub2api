@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -70,6 +69,10 @@ func TestStreamFailedEventCapacityShedRetriesOnSameAccount(t *testing.T) {
 		require.True(t, isOpenAIUpstreamCapacityShedEvent(payload), code)
 		require.True(t, openAIStreamFailedEventRetryableOnSameAccount(nonPool, payload, "overloaded"), code)
 	}
+	staleContextCode := []byte(`{"type":"response.failed","response":{"error":{"code":"context_length_exceeded","type":"invalid_request_error","message":"Our servers are currently overloaded. Please try again later."}}}`)
+	require.True(t, isOpenAIUpstreamCapacityShedEvent(staleContextCode))
+	require.True(t, openAIStreamFailedEventRetryableOnSameAccount(nonPool, staleContextCode, "Our servers are currently overloaded. Please try again later."))
+	require.False(t, isOpenAIContextWindowError("", staleContextCode))
 
 	// 非降载的 failed 事件在非池模式下仍不做同账号重试，避免放大改动面。
 	other := []byte(`{"type":"response.failed","response":{"error":{"code":"server_error"}}}`)
@@ -180,7 +183,8 @@ func TestOpenAIStreamCapacityShedAfterOutputRewritesCodeForClient(t *testing.T) 
 	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "acc"}, time.Now(), "model", "model")
 	require.Error(t, err)
 	var failoverErr *UpstreamFailoverError
-	require.False(t, errors.As(err, &failoverErr))
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.RequestScopedTransient)
 
 	body := rec.Body.String()
 	require.Contains(t, body, "partial")
@@ -208,6 +212,12 @@ func TestSanitizeOpenAICapacityShedErrorCodeForClient(t *testing.T) {
 		{
 			name:        "error帧裸code改写",
 			payload:     `{"type":"error","error":{"code":"slow_down","message":"slow down"}}`,
+			wantChanged: true,
+			wantContain: `"code":"server_error"`,
+		},
+		{
+			name:        "过载消息覆盖陈旧上下文错误码",
+			payload:     `{"type":"response.failed","response":{"error":{"code":"context_length_exceeded","type":"invalid_request_error","message":"Our servers are currently overloaded. Please try again later."}}}`,
 			wantChanged: true,
 			wantContain: `"code":"server_error"`,
 		},
