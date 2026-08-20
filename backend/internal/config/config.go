@@ -2370,7 +2370,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_http2.fallback_window_seconds", 60)
 	viper.SetDefault("gateway.openai_http2.fallback_ttl_seconds", 600)
 	viper.SetDefault("gateway.openai_advanced_quota.enabled", false)
-	viper.SetDefault("gateway.openai_advanced_quota.weekly_limit_usd", 30.0)
+	viper.SetDefault("gateway.openai_advanced_quota.weekly_limit_usd", 50.0)
 	viper.SetDefault("gateway.openai_advanced_quota.fallback_effort", "medium")
 	viper.SetDefault("gateway.openai_advanced_quota.exempt_model_keywords", "terra,luna")
 	viper.SetDefault("gateway.openai_proxy_stream_circuit.disabled", false)

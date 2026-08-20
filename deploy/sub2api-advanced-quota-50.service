@@ -1,0 +1,8 @@
+[Unit]
+Description=Activate migo weekly advanced quota of 50 USD
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/root/lk/sub2api-deploy/activate-advanced-quota-50.sh

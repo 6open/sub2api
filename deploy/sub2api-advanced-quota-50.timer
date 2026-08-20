@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule migo weekly advanced quota increase
+
+[Timer]
+OnCalendar=2026-08-24 00:00:05 Asia/Shanghai
+Persistent=true
+AccuracySec=1s
+Unit=sub2api-advanced-quota-50.service
+
+[Install]
+WantedBy=timers.target
