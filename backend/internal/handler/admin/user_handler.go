@@ -720,6 +720,92 @@ type PlatformQuotaInput struct {
 	MonthlyLimitUSD *float64 `json:"monthly_limit_usd"`
 }
 
+type UpdateOpenAIAdvancedQuotaRequest struct {
+	WeeklyLimitUSD *float64 `json:"weekly_limit_usd" binding:"required"`
+}
+
+// UpdateOpenAIAdvancedQuota updates only the internal advanced-reasoning
+// weekly limit while preserving every other platform quota and current usage.
+func (h *UserHandler) UpdateOpenAIAdvancedQuota(c *gin.Context) {
+	if h.userPlatformQuotaRepo == nil {
+		response.Error(c, 503, "platform quota service not available")
+		return
+	}
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "invalid user id")
+		return
+	}
+	var req UpdateOpenAIAdvancedQuotaRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.WeeklyLimitUSD == nil {
+		response.BadRequest(c, "weekly_limit_usd is required")
+		return
+	}
+	limit := *req.WeeklyLimitUSD
+	if limit < 0 || math.IsNaN(limit) || math.IsInf(limit, 0) {
+		response.BadRequest(c, "weekly_limit_usd must be a finite non-negative number")
+		return
+	}
+
+	ctx := c.Request.Context()
+	user, err := h.adminService.GetUser(ctx, userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if user.Role == service.RoleAdmin {
+		response.BadRequest(c, "admin users have unlimited advanced quota")
+		return
+	}
+	records, err := h.userPlatformQuotaRepo.ListByUser(ctx, userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	var before *float64
+	found := false
+	for i := range records {
+		if records[i].Platform != service.PlatformOpenAIAdvanced {
+			continue
+		}
+		before = records[i].WeeklyLimitUSD
+		records[i].WeeklyLimitUSD = &limit
+		found = true
+		break
+	}
+	if !found {
+		records = append(records, service.UserPlatformQuotaRecord{
+			UserID: userID, Platform: service.PlatformOpenAIAdvanced, WeeklyLimitUSD: &limit,
+		})
+	}
+	if err := h.userPlatformQuotaRepo.UpsertForUser(ctx, userID, records); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if h.billingCache != nil {
+		if err := h.billingCache.DeleteUserPlatformQuotaCache(ctx, userID, service.PlatformOpenAIAdvanced); err != nil {
+			slog.Error("advanced quota cache invalidation failed", "user_id", userID, "err", err)
+		}
+	}
+	slog.Info("admin.openai_advanced_quota_updated",
+		"actor_admin_id", getAdminIDFromContext(c), "target_user_id", userID,
+		"before_weekly_limit_usd", before, "weekly_limit_usd", limit)
+
+	latest, err := h.userPlatformQuotaRepo.ListByUser(ctx, userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	now := time.Now().UTC()
+	for i := range latest {
+		if latest[i].Platform == service.PlatformOpenAIAdvanced {
+			response.Success(c, quotaview.LazyZeroQuotaForResponse(latest[i], now, true))
+			return
+		}
+	}
+	response.NotFound(c, "advanced quota not found")
+}
+
 // platform 合法性由 service.IsAllowedQuotaPlatform / service.AllowedQuotaPlatforms 统一判断（单一源）。
 
 // UpdateUserPlatformQuotas PUT /admin/users/:id/platform-quotas
@@ -926,7 +1012,8 @@ func (h *UserHandler) ResetUserPlatformQuotaWindow(c *gin.Context) {
 		return
 	}
 
-	if !service.IsAllowedQuotaPlatform(req.Platform) {
+	isAdvancedWeekly := req.Platform == service.PlatformOpenAIAdvanced && req.Window == "weekly"
+	if !service.IsAllowedQuotaPlatform(req.Platform) && !isAdvancedWeekly {
 		response.BadRequest(c, "invalid platform: "+req.Platform)
 		return
 	}

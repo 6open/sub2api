@@ -771,8 +771,20 @@ export default {
         invalidNumber: 'The following fields contain invalid numbers. Please fix them before saving: {fields}',
       },
       advancedQuota: {
+        title: 'Advanced Quota Management',
         unlimited: 'Unlimited',
         openDetails: 'View advanced quota details',
+        adminUnlimited: 'Admin accounts are not subject to advanced quota limits.',
+        used: 'Used This Week',
+        remaining: 'Remaining This Week',
+        weeklyLimit: 'Weekly Limit',
+        newWeeklyLimit: 'Weekly Advanced Quota (USD)',
+        resetUsage: 'Reset Weekly Usage',
+        loadFailed: 'Failed to load advanced quota',
+        saved: 'Advanced quota limit updated',
+        saveFailed: 'Failed to save advanced quota',
+        resetSuccess: 'Weekly advanced quota usage reset',
+        resetFailed: 'Failed to reset advanced quota usage',
       }
     },
 

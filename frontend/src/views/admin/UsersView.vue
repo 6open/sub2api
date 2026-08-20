@@ -426,7 +426,7 @@
               type="button"
               class="text-left underline decoration-dashed decoration-gray-300 underline-offset-4 transition-colors hover:text-primary-600 dark:decoration-dark-500 dark:hover:text-primary-400"
               :title="t('admin.users.advancedQuota.openDetails')"
-              @click="handlePlatformQuota(row)"
+              @click="handleAdvancedQuota(row)"
             >
               <span v-if="row.role === 'admin'" class="font-medium text-primary-600 dark:text-primary-400">
                 {{ t('admin.users.advancedQuota.unlimited') }}
@@ -760,6 +760,12 @@
       @close="closePlatformQuotaModal"
       @success="loadUsers"
     />
+    <UserAdvancedQuotaModal
+      :show="showAdvancedQuotaModal"
+      :user="advancedQuotaUser"
+      @close="closeAdvancedQuotaModal"
+      @success="handleAdvancedQuotaSuccess"
+    />
     <UserApiKeysModal :show="showApiKeysModal" :user="viewingUser" @close="closeApiKeysModal" />
     <UserAllowedGroupsModal :show="showAllowedGroupsModal" :user="allowedGroupsUser" @close="closeAllowedGroupsModal" @success="loadUsers" />
     <UserBalanceModal :show="showBalanceModal" :user="balanceUser" :operation="balanceOperation" @close="closeBalanceModal" @success="loadUsers" />
@@ -803,6 +809,7 @@ import UserCreateModal from '@/components/admin/user/UserCreateModal.vue'
 import UserEditModal from '@/components/admin/user/UserEditModal.vue'
 import BulkEditUserModal from '@/components/admin/user/BulkEditUserModal.vue'
 import UserPlatformQuotaModal from '@/components/admin/user/UserPlatformQuotaModal.vue'
+import UserAdvancedQuotaModal from '@/components/admin/user/UserAdvancedQuotaModal.vue'
 import UserApiKeysModal from '@/components/admin/user/UserApiKeysModal.vue'
 import UserAllowedGroupsModal from '@/components/admin/user/UserAllowedGroupsModal.vue'
 import UserBalanceModal from '@/components/admin/user/UserBalanceModal.vue'
@@ -1339,10 +1346,26 @@ const showDeleteDialog = ref(false)
 const showApiKeysModal = ref(false)
 const showAttributesModal = ref(false)
 const showPlatformQuotaModal = ref(false)
+const showAdvancedQuotaModal = ref(false)
 const editingUser = ref<AdminUser | null>(null)
 const deletingUser = ref<AdminUser | null>(null)
 const viewingUser = ref<AdminUser | null>(null)
 const platformQuotaUser = ref<AdminUser | null>(null)
+const advancedQuotaUser = ref<AdminUser | null>(null)
+
+const handleAdvancedQuota = (user: AdminUser) => {
+  advancedQuotaUser.value = user
+  showAdvancedQuotaModal.value = true
+}
+
+const closeAdvancedQuotaModal = () => {
+  showAdvancedQuotaModal.value = false
+  advancedQuotaUser.value = null
+}
+
+const handleAdvancedQuotaSuccess = () => {
+  refreshCurrentPageSecondaryData()
+}
 
 const handlePlatformQuota = (user: AdminUser) => {
   platformQuotaUser.value = user

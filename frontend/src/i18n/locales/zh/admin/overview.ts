@@ -768,8 +768,20 @@ export default {
         invalidNumber: '以下字段填写不是合法数字，请修正后再保存：{fields}',
       },
       advancedQuota: {
+        title: '高级额度管理',
         unlimited: '无限制',
         openDetails: '查看高级额度详情',
+        adminUnlimited: '管理员账号不受高级额度限制。',
+        used: '本周已用',
+        remaining: '本周剩余',
+        weeklyLimit: '每周上限',
+        newWeeklyLimit: '设置每周高级额度 (USD)',
+        resetUsage: '重置本周用量',
+        loadFailed: '加载高级额度失败',
+        saved: '高级额度上限已更新',
+        saveFailed: '保存高级额度失败',
+        resetSuccess: '本周高级额度用量已重置',
+        resetFailed: '重置高级额度用量失败',
       }
     },
 

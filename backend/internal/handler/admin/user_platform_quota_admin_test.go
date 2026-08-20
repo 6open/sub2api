@@ -47,10 +47,31 @@ func (r *upsertCapturingQuotaRepo) UpsertForUser(_ context.Context, userID int64
 	cloned := make([]service.UserPlatformQuotaRecord, len(records))
 	copy(cloned, records)
 	r.upsertCalls = append(r.upsertCalls, upsertCall{userID: userID, records: cloned})
+	if r.upsertErr == nil {
+		r.listRecords = cloned
+	}
 	return r.upsertErr
 }
 func (r *upsertCapturingQuotaRepo) ResetExpiredWindow(_ context.Context, userID int64, platform string, window string, newStart time.Time) error {
 	r.resetCalls = append(r.resetCalls, resetCall{userID, platform, window, newStart})
+	if r.resetErr == nil {
+		for i := range r.listRecords {
+			if r.listRecords[i].Platform != platform {
+				continue
+			}
+			switch window {
+			case "daily":
+				r.listRecords[i].DailyUsageUSD = 0
+				r.listRecords[i].DailyWindowStart = &newStart
+			case "weekly":
+				r.listRecords[i].WeeklyUsageUSD = 0
+				r.listRecords[i].WeeklyWindowStart = &newStart
+			case "monthly":
+				r.listRecords[i].MonthlyUsageUSD = 0
+				r.listRecords[i].MonthlyWindowStart = &newStart
+			}
+		}
+	}
 	return r.resetErr
 }
 
@@ -89,6 +110,72 @@ func putReq(t *testing.T, body string) (*gin.Context, *httptest.ResponseRecorder
 	c.Request = req
 	c.Params = []gin.Param{{Key: "id", Value: "42"}}
 	return c, w
+}
+
+func quotaFloat64Ptr(value float64) *float64 {
+	return &value
+}
+
+func TestUpdateOpenAIAdvancedQuota_PreservesOtherQuotasAndUsage(t *testing.T) {
+	repo := &upsertCapturingQuotaRepo{listRecords: []service.UserPlatformQuotaRecord{
+		{
+			UserID: 42, Platform: service.PlatformOpenAIAdvanced,
+			WeeklyLimitUSD: quotaFloat64Ptr(30), WeeklyUsageUSD: 12.5,
+		},
+		{
+			UserID: 42, Platform: service.PlatformOpenAI,
+			DailyLimitUSD: quotaFloat64Ptr(8), DailyUsageUSD: 3,
+		},
+	}}
+	cache := &billingCacheStub{}
+	h := buildTestHandler(repo, cache)
+
+	c, w := putReq(t, `{"weekly_limit_usd":50}`)
+	h.UpdateOpenAIAdvancedQuota(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(repo.upsertCalls) != 1 || len(repo.upsertCalls[0].records) != 2 {
+		t.Fatalf("expected one upsert preserving both records, got %+v", repo.upsertCalls)
+	}
+	records := repo.upsertCalls[0].records
+	if records[0].WeeklyLimitUSD == nil || *records[0].WeeklyLimitUSD != 50 || records[0].WeeklyUsageUSD != 12.5 {
+		t.Errorf("advanced quota limit/usage mismatch: %+v", records[0])
+	}
+	if records[1].DailyLimitUSD == nil || *records[1].DailyLimitUSD != 8 || records[1].DailyUsageUSD != 3 {
+		t.Errorf("other platform quota was changed: %+v", records[1])
+	}
+	if len(cache.deleteCalls) != 1 || cache.deleteCalls[0].platform != service.PlatformOpenAIAdvanced {
+		t.Errorf("expected only advanced quota cache invalidation, got %+v", cache.deleteCalls)
+	}
+	if !strings.Contains(w.Body.String(), `"weekly_limit_usd":50`) || !strings.Contains(w.Body.String(), `"weekly_usage_usd":12.5`) {
+		t.Errorf("unexpected response: %s", w.Body.String())
+	}
+}
+
+func TestUpdateOpenAIAdvancedQuota_RejectsNegativeLimit(t *testing.T) {
+	h := buildTestHandler(&upsertCapturingQuotaRepo{}, &billingCacheStub{})
+	c, w := putReq(t, `{"weekly_limit_usd":-1}`)
+	h.UpdateOpenAIAdvancedQuota(c)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateOpenAIAdvancedQuota_RejectsAdminUser(t *testing.T) {
+	adminSvc := newStubAdminService()
+	adminSvc.users = []service.User{{ID: 42, Role: service.RoleAdmin, Status: service.StatusActive}}
+	h := &UserHandler{
+		userPlatformQuotaRepo: &upsertCapturingQuotaRepo{},
+		billingCache:          &billingCacheStub{},
+		adminService:          adminSvc,
+	}
+	c, w := putReq(t, `{"weekly_limit_usd":50}`)
+	h.UpdateOpenAIAdvancedQuota(c)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
 }
 
 func TestUpdateUserPlatformQuotas_Success(t *testing.T) {
@@ -220,6 +307,41 @@ func TestResetUserPlatformQuotaWindow_Success(t *testing.T) {
 		cache.deleteCalls[0].userID != 42 ||
 		cache.deleteCalls[0].platform != "anthropic" {
 		t.Errorf("expected 1 cache delete for anthropic, got %+v", cache.deleteCalls)
+	}
+}
+
+func TestResetUserPlatformQuotaWindow_OpenAIAdvancedWeekly(t *testing.T) {
+	repo := &upsertCapturingQuotaRepo{listRecords: []service.UserPlatformQuotaRecord{{
+		UserID: 42, Platform: service.PlatformOpenAIAdvanced,
+		WeeklyLimitUSD: quotaFloat64Ptr(30), WeeklyUsageUSD: 18,
+	}}}
+	cache := &billingCacheStub{}
+	h := buildTestHandler(repo, cache)
+	c, w := postReq(t, `{"platform":"openai_advanced","window":"weekly"}`)
+	h.ResetUserPlatformQuotaWindow(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(repo.resetCalls) != 1 || repo.resetCalls[0].platform != service.PlatformOpenAIAdvanced || repo.resetCalls[0].window != "weekly" {
+		t.Errorf("unexpected reset call: %+v", repo.resetCalls)
+	}
+	if len(cache.deleteCalls) != 1 || cache.deleteCalls[0].platform != service.PlatformOpenAIAdvanced {
+		t.Errorf("expected advanced quota cache invalidation, got %+v", cache.deleteCalls)
+	}
+	if !strings.Contains(w.Body.String(), `"weekly_usage_usd":0`) {
+		t.Errorf("weekly usage should be reset in response: %s", w.Body.String())
+	}
+}
+
+func TestResetUserPlatformQuotaWindow_RejectsOpenAIAdvancedNonWeekly(t *testing.T) {
+	h := buildTestHandler(&upsertCapturingQuotaRepo{}, &billingCacheStub{})
+	for _, window := range []string{"daily", "monthly"} {
+		c, w := postReq(t, `{"platform":"openai_advanced","window":"`+window+`"}`)
+		h.ResetUserPlatformQuotaWindow(c)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for %s reset, got %d: %s", window, w.Code, w.Body.String())
+		}
 	}
 }
 

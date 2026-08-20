@@ -399,6 +399,17 @@ export async function resetPlatformQuotaWindow(
   return data
 }
 
+export async function updateOpenAIAdvancedQuota(
+  id: number,
+  weeklyLimitUsd: number
+): Promise<PlatformQuotaItem> {
+  const { data } = await apiClient.put<PlatformQuotaItem>(
+    `/admin/users/${id}/openai-advanced-quota`,
+    { weekly_limit_usd: weeklyLimitUsd }
+  )
+  return data
+}
+
 export const usersAPI = {
   list,
   getById,
@@ -417,6 +428,7 @@ export const usersAPI = {
   getPlatformQuotas,
   updatePlatformQuotas,
   resetPlatformQuotaWindow,
+  updateOpenAIAdvancedQuota,
 }
 
 export default usersAPI
