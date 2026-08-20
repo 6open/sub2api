@@ -342,6 +342,9 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder, l
 
 	switch action {
 	case redeemActionSkipCompleted:
+		if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
+			return err
+		}
 		// Code already created and redeemed — just mark completed
 		return s.markCompleted(ctx, o, lease, "RECHARGE_SUCCESS")
 	case redeemActionCreate:
@@ -354,6 +357,9 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder, l
 	}
 	if _, err := s.redeemService.Redeem(ContextSkipRedeemAffiliate(ctx), o.UserID, o.RechargeCode); err != nil {
 		return fmt.Errorf("redeem balance: %w", err)
+	}
+	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
+		return err
 	}
 	return s.markCompleted(ctx, o, lease, "RECHARGE_SUCCESS")
 }
@@ -505,6 +511,9 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder, lease
 		return fmt.Errorf("group %d no longer exists or inactive", gid)
 	}
 	if err := s.ensurePaymentSubscriptionAssigned(ctx, o, gid, days); err != nil {
+		return err
+	}
+	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
 		return err
 	}
 	return s.markCompleted(ctx, o, lease, "SUBSCRIPTION_SUCCESS")

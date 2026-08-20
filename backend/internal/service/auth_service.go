@@ -1403,6 +1403,9 @@ func (s *AuthService) validateRegistrationEmailPolicy(ctx context.Context, email
 	}
 	whitelist := s.settingService.GetRegistrationEmailSuffixWhitelist(ctx)
 	if !IsRegistrationEmailSuffixAllowed(email, whitelist) {
+		if s.settingService.IsRegistrationEmailDomainQuotaEnabled(ctx) {
+			return nil
+		}
 		return buildEmailSuffixNotAllowedError(whitelist)
 	}
 	return nil

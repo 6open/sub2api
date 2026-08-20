@@ -139,7 +139,7 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 		}
 		return s.validateSubOrder(ctx, req)
 	}
-	validationAmount := req.Amount
+	var validationAmount float64
 	if strings.TrimSpace(req.BalancePackageID) != "" {
 		pkg, err := resolveBalancePackage(req.BalancePackageID, cfg.BalanceRechargeMultiplier, isLKLBPromotionActive(time.Now()))
 		if err != nil {
