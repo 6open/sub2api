@@ -57,7 +57,7 @@
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
             <template v-else>
-            <div v-if="checkout.balance_packages.length > 0" class="card p-6">
+            <div v-if="(checkout.balance_packages?.length ?? 0) > 0" class="card p-6">
               <div class="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <h2 class="text-sm font-semibold text-gray-900 dark:text-white">充值满 100 享 9 折</h2>
@@ -66,7 +66,7 @@
                 <span class="text-xs text-gray-500 dark:text-gray-400">到账额度</span>
               </div>
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <button v-for="pkg in checkout.balance_packages" :key="pkg.id" type="button"
+                <button v-for="pkg in (checkout.balance_packages || [])" :key="pkg.id" type="button"
                   :class="['relative h-28 rounded-lg border p-4 text-left transition-colors', selectedBalancePackage?.id === pkg.id ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500 dark:bg-primary-950/30' : 'border-gray-200 bg-white hover:border-primary-300 dark:border-dark-600 dark:bg-dark-800']"
                   @click="selectBalancePackage(pkg)">
                   <span v-if="pkg.badge" class="absolute right-3 top-3 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">{{ pkg.badge === 'recommended' ? '推荐' : '最划算' }}</span>
