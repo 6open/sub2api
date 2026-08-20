@@ -525,7 +525,7 @@ export default {
         role: 'Role',
         groups: 'Groups',
         subscriptions: 'Subscriptions',
-        balance: 'Balance',
+        balance: 'Advanced quota',
         balancePlatformQuota: 'Balance (Platform Quota)',
         usage: 'Usage',
         usageAnthropic: 'Usage (Claude)',
@@ -769,6 +769,10 @@ export default {
         cellColumnTooltip: 'Only platforms with a limit are shown',
         subscriptionWarning: 'This user has an active subscription. Platform quotas only apply to balance (standard) mode requests; subscription mode requests are not subject to these limits.',
         invalidNumber: 'The following fields contain invalid numbers. Please fix them before saving: {fields}',
+      },
+      advancedQuota: {
+        unlimited: 'Unlimited',
+        openDetails: 'View advanced quota details',
       }
     },
 

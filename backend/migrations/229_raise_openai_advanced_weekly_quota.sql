@@ -6,4 +6,5 @@ SET weekly_limit_usd = 50,
     updated_at = NOW()
 WHERE platform = 'openai_advanced'
   AND deleted_at IS NULL
-  AND weekly_limit_usd = 30;
+  AND weekly_limit_usd = 30
+  AND NOW() >= TIMESTAMPTZ '2026-08-24 00:00:00+08';

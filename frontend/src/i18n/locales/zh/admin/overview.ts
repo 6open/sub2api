@@ -505,7 +505,7 @@ export default {
         role: '角色',
         groups: '分组',
         subscriptions: '订阅分组',
-        balance: '余额',
+        balance: '高级额度',
         balancePlatformQuota: '余额(平台配额)',
         usage: '用量',
         usageAnthropic: '用量 (Claude)',
@@ -766,6 +766,10 @@ export default {
         cellColumnTooltip: '仅展示已设限额的平台',
         subscriptionWarning: '此用户有活跃订阅，平台限额仅在余额（标准）模式下生效，订阅模式请求不受此限额约束。',
         invalidNumber: '以下字段填写不是合法数字，请修正后再保存：{fields}',
+      },
+      advancedQuota: {
+        unlimited: '无限制',
+        openDetails: '查看高级额度详情',
       }
     },
 

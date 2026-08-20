@@ -8,12 +8,14 @@ const {
   listUsers,
   getAllGroups,
   getBatchUsersUsage,
+  getPlatformQuotas,
   listEnabledDefinitions,
   getBatchUserAttributes
 } = vi.hoisted(() => ({
   listUsers: vi.fn(),
   getAllGroups: vi.fn(),
   getBatchUsersUsage: vi.fn(),
+  getPlatformQuotas: vi.fn(),
   listEnabledDefinitions: vi.fn(),
   getBatchUserAttributes: vi.fn()
 }))
@@ -22,6 +24,7 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     users: {
       list: listUsers,
+      getPlatformQuotas,
       toggleStatus: vi.fn(),
       delete: vi.fn()
     },
@@ -97,6 +100,9 @@ const DataTableStub = {
         <slot :name="'header-' + col.key" :column="col" />
       </template>
       <div v-for="row in data" :key="row.id">
+        <div :data-test="'balance-' + row.id">
+          <slot name="cell-balance" :value="row.balance" :row="row" />
+        </div>
         <slot name="cell-last_used_at" :value="row.last_used_at" :row="row" />
       </div>
     </div>
@@ -127,6 +133,7 @@ describe('admin UsersView', () => {
     listUsers.mockReset()
     getAllGroups.mockReset()
     getBatchUsersUsage.mockReset()
+    getPlatformQuotas.mockReset()
     listEnabledDefinitions.mockReset()
     getBatchUserAttributes.mockReset()
 
@@ -139,6 +146,17 @@ describe('admin UsersView', () => {
     })
     getAllGroups.mockResolvedValue([])
     getBatchUsersUsage.mockResolvedValue({ stats: {} })
+    getPlatformQuotas.mockResolvedValue({
+      platform_quotas: [{
+        platform: 'openai_advanced',
+        daily_limit_usd: null,
+        weekly_limit_usd: 30,
+        monthly_limit_usd: null,
+        daily_usage_usd: 0,
+        weekly_usage_usd: 5,
+        monthly_usage_usd: 0
+      }]
+    })
     listEnabledDefinitions.mockResolvedValue([])
     getBatchUserAttributes.mockResolvedValue({ values: {} })
   })
@@ -197,6 +215,53 @@ describe('admin UsersView', () => {
       }),
       expect.any(Object)
     )
+  })
+
+  it('shows advanced quota remaining instead of the stored balance', async () => {
+    listUsers.mockResolvedValue({
+      items: [createAdminUser({ id: 42, balance: 501 })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: { template: '<div><slot name="table" /></div>' },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          BulkEditUserModal: true,
+          UserPlatformQuotaModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await flushPromises()
+
+    const quotaCell = wrapper.get('[data-test="balance-42"]').text()
+    expect(quotaCell).toContain('$25.00')
+    expect(quotaCell).toContain('$30.00')
+    expect(quotaCell).not.toContain('$501.00')
   })
 
   it('clears usage current-page sort when switching to last_used_at server sort', async () => {

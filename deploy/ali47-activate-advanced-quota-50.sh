@@ -4,7 +4,7 @@ set -euo pipefail
 readonly DEPLOY_DIR=/root/lk/sub2api-deploy
 readonly COMPOSE_FILE="$DEPLOY_DIR/docker-compose.yml"
 readonly MIGRATION_NAME=229_raise_openai_advanced_weekly_quota.sql
-readonly MIGRATION_CHECKSUM=0793778dcaf46177324ff9fce092007527bf87f9fc234adfe527081f0188fb5d
+readonly MIGRATION_CHECKSUM=fe79762dbb5db610350ddf6454a35cf57acca680517ca11d50ddcca0cb96bfcf
 
 exec 9>/run/sub2api-advanced-quota-50.lock
 flock -n 9 || exit 0

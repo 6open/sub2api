@@ -421,29 +421,27 @@
             </span>
           </template>
 
-          <template #cell-balance="{ value, row }">
-            <div class="flex items-center gap-2">
-              <div class="group relative">
-                <button
-                  class="font-medium text-gray-900 underline decoration-dashed decoration-gray-300 underline-offset-4 transition-colors hover:text-primary-600 dark:text-white dark:decoration-dark-500 dark:hover:text-primary-400"
-                  @click="handleBalanceHistory(row)"
-                >
-                  ${{ value.toFixed(2) }}
-                </button>
-                <!-- Instant tooltip -->
-                <div class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity duration-75 group-hover:opacity-100 dark:bg-dark-600">
-                  {{ t('admin.users.balanceHistoryTip') }}
-                  <div class="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-dark-600"></div>
-                </div>
-              </div>
-              <button
-                @click.stop="handleDeposit(row)"
-                class="rounded px-2 py-0.5 text-xs font-medium text-emerald-600 transition-colors hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
-                :title="t('admin.users.deposit')"
-              >
-                {{ t('admin.users.deposit') }}
-              </button>
-            </div>
+          <template #cell-balance="{ row }">
+            <button
+              type="button"
+              class="text-left underline decoration-dashed decoration-gray-300 underline-offset-4 transition-colors hover:text-primary-600 dark:decoration-dark-500 dark:hover:text-primary-400"
+              :title="t('admin.users.advancedQuota.openDetails')"
+              @click="handlePlatformQuota(row)"
+            >
+              <span v-if="row.role === 'admin'" class="font-medium text-primary-600 dark:text-primary-400">
+                {{ t('admin.users.advancedQuota.unlimited') }}
+              </span>
+              <span v-else-if="platformQuotaStats[row.id] === undefined" class="text-gray-400 dark:text-gray-500">…</span>
+              <span v-else-if="getAdvancedQuota(row.id)" class="whitespace-nowrap">
+                <span class="font-semibold text-primary-600 dark:text-primary-400">
+                  ${{ formatQuotaAmount(getAdvancedQuotaRemaining(row.id)) }}
+                </span>
+                <span class="text-xs text-gray-400 dark:text-gray-500">
+                  / ${{ formatQuotaAmount(getAdvancedQuota(row.id)?.weekly_limit_usd ?? 0) }}
+                </span>
+              </span>
+              <span v-else class="text-xs text-gray-400 dark:text-gray-500">{{ t('admin.users.platformQuota.cellNotConfigured') }}</span>
+            </button>
           </template>
 
           <template #cell-balance_platform_quota="{ row }">
@@ -870,7 +868,7 @@ const allColumns = computed<Column[]>(() => [
   { key: 'role', label: t('admin.users.columns.role'), sortable: true },
   { key: 'groups', label: t('admin.users.columns.groups'), sortable: false },
   { key: 'subscriptions', label: t('admin.users.columns.subscriptions'), sortable: false },
-  { key: 'balance', label: t('admin.users.columns.balance'), sortable: true },
+  { key: 'balance', label: t('admin.users.columns.balance'), sortable: false },
   { key: 'balance_platform_quota', label: t('admin.users.columns.balancePlatformQuota'), sortable: false },
   { key: 'usage', label: t('admin.users.columns.usage'), sortable: false },
   { key: 'usage_anthropic', label: t('admin.users.columns.usageAnthropic'), sortable: false },
@@ -1007,7 +1005,9 @@ const hasVisibleUsageColumn = computed(
   () => !hiddenColumns.has('usage') || PLATFORM_USAGE_COLUMNS.some((k) => !hiddenColumns.has(k))
 )
 const hasVisibleGroupsColumn = computed(() => !hiddenColumns.has('groups'))
-const hasVisiblePlatformQuotaColumn = computed(() => !hiddenColumns.has('balance_platform_quota'))
+const hasVisiblePlatformQuotaColumn = computed(
+  () => !hiddenColumns.has('balance_platform_quota') || !hiddenColumns.has('balance')
+)
 const hasVisibleAttributeColumns = computed(() =>
   attributeDefinitions.value.some((def) => def.enabled && !hiddenColumns.has(`attr_${def.id}`))
 )
@@ -1194,6 +1194,20 @@ const getAttributeDefinition = (attrId: number): UserAttributeDefinition | undef
 }
 const usageStats = ref<Record<string, BatchUserUsageStats>>({})
 const platformQuotaStats = ref<Record<number, PlatformQuotaItem[]>>({})
+
+const getAdvancedQuota = (userId: number): PlatformQuotaItem | undefined =>
+  platformQuotaStats.value[userId]?.find((quota) => quota.platform === 'openai_advanced')
+
+const getAdvancedQuotaRemaining = (userId: number): number => {
+  const quota = getAdvancedQuota(userId)
+  if (!quota || quota.weekly_limit_usd == null) return 0
+  return Math.max(0, quota.weekly_limit_usd - quota.weekly_usage_usd)
+}
+
+const formatQuotaAmount = (value: number): string => {
+  if (!Number.isFinite(value)) return '0'
+  return value.toFixed(2)
+}
 
 const getPlatformUsage = (userId: number, platform: string) =>
   usageStats.value[userId]?.by_platform?.find((p) => p.platform === platform)

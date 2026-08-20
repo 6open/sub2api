@@ -54,49 +54,28 @@
         <!-- Subscription Progress (for users with active subscriptions) -->
         <SubscriptionProgressMini v-if="user" />
 
-        <!-- Balance Display -->
+        <!-- Advanced quota display -->
         <div
           v-if="user"
           class="group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
         >
-          <svg
-            class="h-4 w-4 text-primary-600 dark:text-primary-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            stroke-width="1.5"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"
-            />
-          </svg>
+          <Icon name="bolt" size="sm" class="text-primary-600 dark:text-primary-400" />
           <span class="text-sm font-semibold text-primary-700 dark:text-primary-300">
-            {{ formatHeaderMoney(availableBalance) }}
-          </span>
-          <span
-            v-if="frozenBalance > 0"
-            class="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-          >
-            {{ balanceFrozenLabel }}
+            {{ advancedQuotaDisplay }}
           </span>
           <div
             class="pointer-events-none absolute right-0 top-full mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg group-hover:block dark:border-dark-700 dark:bg-dark-800"
           >
             <div class="flex items-center justify-between">
-              <span class="text-gray-500 dark:text-dark-400">{{ balanceAvailableText }}</span>
-              <span class="font-medium text-gray-900 dark:text-white">{{ formatHeaderMoney(availableBalance) }}</span>
+              <span class="text-gray-500 dark:text-dark-400">{{ t('dashboard.advancedQuota') }}</span>
+              <span class="font-medium text-gray-900 dark:text-white">{{ advancedQuotaDisplay }}</span>
             </div>
-            <div class="mt-2 flex items-center justify-between">
-              <span class="text-gray-500 dark:text-dark-400">{{ balanceFrozenText }}</span>
-              <span class="font-medium text-amber-700 dark:text-amber-200">{{ formatHeaderMoney(frozenBalance) }}</span>
+            <div v-if="!authStore.isAdmin && advancedQuota" class="mt-2 flex items-center justify-between">
+              <span class="text-gray-500 dark:text-dark-400">{{ t('dashboard.advancedQuotaUsedLabel') }}</span>
+              <span class="font-medium text-gray-900 dark:text-white">${{ formatQuotaMoney(advancedQuota.weekly_usage_usd) }}</span>
             </div>
-            <div class="mt-2 border-t border-gray-100 pt-2 dark:border-dark-700">
-              <div class="flex items-center justify-between">
-                <span class="text-gray-500 dark:text-dark-400">{{ balanceTotalText }}</span>
-                <span class="font-semibold text-gray-900 dark:text-white">{{ formatHeaderMoney(totalBalance) }}</span>
-              </div>
+            <div v-if="!authStore.isAdmin && advancedQuota?.weekly_window_resets_at" class="mt-2 border-t border-gray-100 pt-2 text-gray-500 dark:border-dark-700 dark:text-dark-400">
+              {{ t('dashboard.platformQuota.resetsAt', { time: formatQuotaReset(advancedQuota.weekly_window_resets_at) }) }}
             </div>
           </div>
         </div>
@@ -139,16 +118,13 @@
                 <div class="text-xs text-gray-500 dark:text-dark-400">{{ user.email }}</div>
               </div>
 
-              <!-- Balance (mobile only) -->
+              <!-- Advanced quota (mobile only) -->
               <div class="border-b border-gray-100 px-4 py-2 dark:border-dark-700 sm:hidden">
                 <div class="text-xs text-gray-500 dark:text-dark-400">
-                  {{ t('common.balance') }}
+                  {{ t('dashboard.advancedQuota') }}
                 </div>
                 <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">
-                  {{ formatHeaderMoney(availableBalance) }}
-                </div>
-                <div v-if="frozenBalance > 0" class="mt-1 text-xs text-amber-600 dark:text-amber-300">
-                  {{ balanceFrozenText }} {{ formatHeaderMoney(frozenBalance) }}
+                  {{ advancedQuotaDisplay }}
                 </div>
               </div>
 
@@ -250,7 +226,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
@@ -261,6 +237,8 @@ import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
+import { getMyPlatformQuotas } from '@/api/user'
+import type { PlatformQuotaItem } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
@@ -277,13 +255,16 @@ const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
-const availableBalance = computed(() => Number(user.value?.balance || 0))
-const frozenBalance = computed(() => Number(user.value?.frozen_balance || 0))
-const totalBalance = computed(() => availableBalance.value + frozenBalance.value)
-const balanceAvailableText = computed(() => t('common.availableBalance') === 'common.availableBalance' ? '可用余额' : t('common.availableBalance'))
-const balanceFrozenText = computed(() => t('common.frozenBalance') === 'common.frozenBalance' ? '冻结金额' : t('common.frozenBalance'))
-const balanceTotalText = computed(() => t('common.totalBalance') === 'common.totalBalance' ? '总余额' : t('common.totalBalance'))
-const balanceFrozenLabel = computed(() => `${balanceFrozenText.value} ${formatHeaderMoney(frozenBalance.value)}`)
+const advancedQuota = ref<PlatformQuotaItem | null>(null)
+const advancedQuotaLoading = ref(false)
+const advancedQuotaDisplay = computed(() => {
+  if (authStore.isAdmin) return t('dashboard.advancedQuotaUnlimited')
+  if (advancedQuotaLoading.value) return '…'
+  const limit = advancedQuota.value?.weekly_limit_usd
+  if (limit == null) return '--'
+  const remaining = Math.max(0, limit - (advancedQuota.value?.weekly_usage_usd ?? 0))
+  return `$${formatQuotaMoney(remaining)} / $${formatQuotaMoney(limit)}`
+})
 
 // 只在标准模式的管理员下显示新手引导按钮
 const showOnboardingButton = computed(() => {
@@ -361,9 +342,35 @@ function handleReplayGuide() {
   onboardingStore.replay()
 }
 
-function formatHeaderMoney(value: number) {
-  if (!Number.isFinite(value)) return '$0.00'
-  return `$${value.toFixed(2)}`
+function formatQuotaMoney(value: number) {
+  if (!Number.isFinite(value)) return '0.00'
+  return value.toFixed(2)
+}
+
+function formatQuotaReset(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+}
+
+async function loadAdvancedQuota() {
+  advancedQuota.value = null
+  if (!user.value || authStore.isAdmin) return
+  advancedQuotaLoading.value = true
+  try {
+    const response = await getMyPlatformQuotas()
+    advancedQuota.value = response.platform_quotas.find((quota) => quota.platform === 'openai_advanced') ?? null
+  } catch (error) {
+    console.warn('Failed to load advanced quota:', error)
+  } finally {
+    advancedQuotaLoading.value = false
+  }
 }
 
 function handleClickOutside(event: MouseEvent) {
@@ -375,6 +382,10 @@ function handleClickOutside(event: MouseEvent) {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
 })
+
+watch(() => user.value?.id, () => {
+  void loadAdvancedQuota()
+}, { immediate: true })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
