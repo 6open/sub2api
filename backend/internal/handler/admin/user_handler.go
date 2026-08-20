@@ -809,6 +809,14 @@ func (h *UserHandler) UpdateUserPlatformQuotas(c *gin.Context) {
 	if beforeErr != nil {
 		slog.Warn("quota audit before snapshot failed", "user_id", userID, "err", beforeErr)
 	}
+	// openai_advanced is an internal ledger and is intentionally absent from
+	// the generic platform quota editor. Preserve it during full replacement.
+	for _, existing := range beforeRecords {
+		if existing.Platform == service.PlatformOpenAIAdvanced {
+			records = append(records, existing)
+			break
+		}
+	}
 	if err := h.userPlatformQuotaRepo.UpsertForUser(ctx, userID, records); err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -2141,7 +2141,9 @@ func resolvedTokenVersion(user *User) int64 {
 // snapshotPlatformQuotaDefaults 把 plan.PlatformQuotas（platform × 3 window）以
 // BulkInsertInitial 形式写入 user_platform_quotas 表。失败 fail-open（仅 warn log）。
 func (s *AuthService) snapshotPlatformQuotaDefaults(ctx context.Context, userID int64, plan *signupGrantPlan) error {
-	if s.userPlatformQuotaRepo == nil || plan == nil || len(plan.PlatformQuotas) == 0 {
+	advancedQuotaEnabled := s != nil && s.cfg != nil &&
+		s.cfg.Gateway.OpenAIAdvancedQuota.Enabled && s.cfg.Gateway.OpenAIAdvancedQuota.WeeklyLimitUSD > 0
+	if s == nil || s.userPlatformQuotaRepo == nil || plan == nil || (len(plan.PlatformQuotas) == 0 && !advancedQuotaEnabled) {
 		return nil
 	}
 	// 平台配额快照是 best-effort（fail-open）：必须脱离调用方事务执行。
@@ -2161,6 +2163,14 @@ func (s *AuthService) snapshotPlatformQuotaDefaults(ctx context.Context, userID 
 			rec.MonthlyLimitUSD = q.MonthlyLimitUSD
 		}
 		records = append(records, rec)
+	}
+	if advancedQuotaEnabled {
+		weeklyLimit := s.cfg.Gateway.OpenAIAdvancedQuota.WeeklyLimitUSD
+		records = append(records, UserPlatformQuotaRecord{
+			UserID:         userID,
+			Platform:       PlatformOpenAIAdvanced,
+			WeeklyLimitUSD: &weeklyLimit,
+		})
 	}
 	if err := s.userPlatformQuotaRepo.BulkInsertInitial(ctx, records); err != nil {
 		logger.LegacyPrintf("service.auth", "[Auth] Warning: snapshot platform quota failed user=%d: %v (fail-open)", userID, err)

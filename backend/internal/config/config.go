@@ -942,6 +942,8 @@ type GatewayConfig struct {
 	OpenAIScheduler GatewayOpenAISchedulerConfig `mapstructure:"openai_scheduler"`
 	// OpenAIHTTP2: OpenAI HTTP 上游协议策略（默认启用 HTTP/2，可按代理能力回退 HTTP/1.1）
 	OpenAIHTTP2 GatewayOpenAIHTTP2Config `mapstructure:"openai_http2"`
+	// OpenAIAdvancedQuota: OpenAI 高级推理独立周额度。默认关闭，避免影响现有部署。
+	OpenAIAdvancedQuota GatewayOpenAIAdvancedQuotaConfig `mapstructure:"openai_advanced_quota"`
 	// OpenAIProxyStreamCircuit: Responses SSE 代理断流熔断策略。
 	OpenAIProxyStreamCircuit GatewayOpenAIProxyStreamCircuitConfig `mapstructure:"openai_proxy_stream_circuit"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
@@ -1029,6 +1031,15 @@ type GatewayConfig struct {
 	// CNProviders: 国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）的余额检测配置。
 	// 仅作用于 payg（按量付费）账号：周期探测余额，低于阈值则临时停调。
 	CNProviders GatewayCNProvidersConfig `mapstructure:"cn_providers"`
+}
+
+// GatewayOpenAIAdvancedQuotaConfig controls the independent weekly quota for
+// high/xhigh/max requests. Usage is measured using pre-multiplier token cost.
+type GatewayOpenAIAdvancedQuotaConfig struct {
+	Enabled             bool    `mapstructure:"enabled"`
+	WeeklyLimitUSD      float64 `mapstructure:"weekly_limit_usd"`
+	FallbackEffort      string  `mapstructure:"fallback_effort"`
+	ExemptModelKeywords string  `mapstructure:"exempt_model_keywords"`
 }
 
 // GatewayGrokConfig holds Grok-specific gateway scheduling knobs.
@@ -2358,6 +2369,10 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_http2.fallback_error_threshold", 2)
 	viper.SetDefault("gateway.openai_http2.fallback_window_seconds", 60)
 	viper.SetDefault("gateway.openai_http2.fallback_ttl_seconds", 600)
+	viper.SetDefault("gateway.openai_advanced_quota.enabled", false)
+	viper.SetDefault("gateway.openai_advanced_quota.weekly_limit_usd", 100.0)
+	viper.SetDefault("gateway.openai_advanced_quota.fallback_effort", "medium")
+	viper.SetDefault("gateway.openai_advanced_quota.exempt_model_keywords", "terra,luna")
 	viper.SetDefault("gateway.openai_proxy_stream_circuit.disabled", false)
 	viper.SetDefault("gateway.openai_proxy_stream_circuit.failure_threshold", 2)
 	viper.SetDefault("gateway.openai_proxy_stream_circuit.window_seconds", 60)
@@ -3407,6 +3422,13 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIHTTP2.FallbackTTLSeconds < 0 {
 		return fmt.Errorf("gateway.openai_http2.fallback_ttl_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIAdvancedQuota.WeeklyLimitUSD < 0 {
+		return fmt.Errorf("gateway.openai_advanced_quota.weekly_limit_usd must be non-negative")
+	}
+	fallbackEffort := strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIAdvancedQuota.FallbackEffort))
+	if fallbackEffort != "" && fallbackEffort != "low" && fallbackEffort != "medium" {
+		return fmt.Errorf("gateway.openai_advanced_quota.fallback_effort must be low or medium")
 	}
 	if c.Gateway.OpenAIProxyStreamCircuit.FailureThreshold < 0 {
 		return fmt.Errorf("gateway.openai_proxy_stream_circuit.failure_threshold must be non-negative")

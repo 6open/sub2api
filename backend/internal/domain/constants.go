@@ -28,6 +28,8 @@ const (
 	PlatformZhipu     = "zhipu"    // 智谱 GLM (bigmodel)
 	PlatformDeepseek  = "deepseek" // DeepSeek
 	PlatformComposite = "composite"
+	// PlatformOpenAIAdvanced is an internal quota ledger, not a routable platform.
+	PlatformOpenAIAdvanced = "openai_advanced"
 )
 
 // Account mode constants 区分国产供应商的「按量付费（余额）」与「Coding Plan」两种接入方式。

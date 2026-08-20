@@ -376,6 +376,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.openAISecurityAuditError(c, decision)
 		return
 	}
+	body = h.applyOpenAIAdvancedQuotaPolicy(c, reqLog, apiKey, body, reqModel)
 
 	// 使用 IsExplicitImageGenerationIntent 排除被动 image_gen namespace 声明。
 	// Codex 在所有请求中被动声明 image_gen namespace，宽泛检测会导致禁了生图的
@@ -1788,6 +1789,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision))
 		return
 	}
+	firstMessage = h.applyOpenAIAdvancedQuotaPolicy(c, reqLog, apiKey, firstMessage, reqModel)
 
 	imageIntent := service.IsExplicitImageGenerationIntent("/v1/responses", reqModel, firstMessage)
 	if imageIntent && !service.GroupAllowsImageGeneration(apiKey.Group) {

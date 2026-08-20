@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -1369,4 +1370,17 @@ func (s *BillingCacheService) HasUserPlatformQuotaLimit(ctx context.Context, use
 		return true
 	}
 	return entry.DailyLimitUSD != nil || entry.WeeklyLimitUSD != nil || entry.MonthlyLimitUSD != nil
+}
+
+// IsUserPlatformWeeklyQuotaExhausted checks only the weekly window. Other
+// errors are returned so the downgrade policy can fail open.
+func (s *BillingCacheService) IsUserPlatformWeeklyQuotaExhausted(ctx context.Context, userID int64, platform string) (bool, error) {
+	err := s.checkUserPlatformQuotaEligibility(ctx, userID, platform)
+	if err == nil {
+		return false, nil
+	}
+	if errors.Is(err, ErrUserPlatformWeeklyQuotaExhausted) {
+		return true, nil
+	}
+	return false, err
 }

@@ -81,7 +81,8 @@ type postUsageBillingParams struct {
 	IsSubscriptionBill    bool
 	AccountRateMultiplier float64
 	APIKeyService         APIKeyQuotaUpdater
-	Platform              string // 来自 APIKey 关联 Group 的平台标识
+	Platform              string  // 来自 APIKey 关联 Group 的平台标识
+	AdvancedQuotaCost     float64 // 独立高级推理额度，按倍率前标准费用累计
 }
 
 // PlatformFromAPIKey 从 APIKey 关联的 Group 推导 platform 名称。
@@ -196,6 +197,7 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 			// flusher_enabled=true:不直写 DB，flusher 异步批量刷
 		}
 	}
+	incrementOpenAIAdvancedQuotaUsage(billingCtx, p, deps)
 
 	// NOTE: finalizePostUsageBilling is NOT called here to avoid double-queuing
 	// cache updates. The legacy path does DB writes directly; the finalize path
@@ -417,11 +419,33 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 			// flusher_enabled=true:不直写 DB,flusher 异步批量刷
 		}
 	}
+	incrementOpenAIAdvancedQuotaUsage(ctx, p, deps)
 
 	// Notification checks run async — all parameters are already captured,
 	// no dependency on the request context or upstream connection.
 	go notifyBalanceLow(p, deps, result)
 	go notifyAccountQuota(p, deps, result)
+}
+
+func incrementOpenAIAdvancedQuotaUsage(ctx context.Context, p *postUsageBillingParams, deps *billingDeps) {
+	if p == nil || deps == nil || deps.billingCacheService == nil || deps.userPlatformQuotaRepo == nil ||
+		p.User == nil || p.AdvancedQuotaCost <= 0 {
+		return
+	}
+	cost := p.AdvancedQuotaCost
+	deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, PlatformOpenAIAdvanced, cost)
+	if deps.cfg != nil && deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
+		return
+	}
+	dbCtx, cancel := detachUpstreamContext(ctx)
+	userID := p.User.ID
+	go func() {
+		defer cancel()
+		if err := deps.userPlatformQuotaRepo.IncrementUsageWithReset(dbCtx, userID, PlatformOpenAIAdvanced, cost, time.Now().UTC()); err != nil {
+			userPlatformQuotaDBIncrErrorTotal.Add(1)
+			logger.LegacyPrintf("service.gateway", "ALERT: incr advanced quota DB failed user=%d cost=%f: %v", userID, cost, err)
+		}
+	}()
 }
 
 func syncBalanceCacheAfterDeduction(ctx context.Context, p *postUsageBillingParams, deps *billingDeps, result *UsageBillingApplyResult) {

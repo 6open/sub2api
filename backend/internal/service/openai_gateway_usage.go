@@ -439,6 +439,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if quotaPlatform == "" {
 		quotaPlatform = PlatformFromAPIKey(apiKey)
 	}
+	advancedQuotaCost := 0.0
+	if usageLog.ReasoningEffort != nil {
+		advancedQuotaCost = OpenAIAdvancedQuotaUsageCost(s.cfg, user, quotaPlatform, usageLog.Model, *usageLog.ReasoningEffort, cost.TotalCost)
+	}
 
 	billingErr := func() error {
 		_, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
@@ -452,6 +456,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			AccountRateMultiplier: accountRateMultiplier,
 			APIKeyService:         input.APIKeyService,
 			Platform:              quotaPlatform,
+			AdvancedQuotaCost:     advancedQuotaCost,
 		}, s.billingDeps(), s.usageBillingRepo)
 		return err
 	}()
