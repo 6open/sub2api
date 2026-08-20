@@ -193,7 +193,7 @@ func TestOpenAIGatewayService_ForwardAsAnthropic_TempUnschedulableReturnsFailove
 	require.NotEmpty(t, secondRec.Body.String())
 }
 
-func TestFailoverOpenAIUpstreamHTTPError_NilContextSkipsTempUnschedulablePolicy(t *testing.T) {
+func TestFailoverOpenAIUpstreamHTTPError_NilContextStillHandlesExplicitOverload(t *testing.T) {
 	repo := &tempUnschedulableOpenAIAccountRepo{}
 	svc := &OpenAIGatewayService{
 		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
@@ -217,9 +217,10 @@ func TestFailoverOpenAIUpstreamHTTPError_NilContextSkipsTempUnschedulablePolicy(
 		"Our servers are currently overloaded.", "gpt-5.4",
 	)
 
-	require.Nil(t, got)
-	require.Zero(t, repo.modelRateLimitAccountID)
-	require.Empty(t, repo.modelRateLimitKey)
+	require.NotNil(t, got)
+	require.True(t, got.ShouldRetryNextAccount())
+	require.Equal(t, account.ID, repo.modelRateLimitAccountID)
+	require.Equal(t, "gpt-5.4", repo.modelRateLimitKey)
 }
 
 type groupAwareStubOpenAIAccountRepo struct {
