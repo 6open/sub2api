@@ -135,7 +135,8 @@ func TestNormalizeOpenAIResponsesLiteTools_ConvertsStringInput(t *testing.T) {
 
 func TestNormalizeOpenAIResponsesLiteTools_KeepsSupportedTopLevelTools(t *testing.T) {
 	reqBody := map[string]any{
-		"reasoning": map[string]any{"context": "all_turns"},
+		"reasoning":           map[string]any{"context": "all_turns"},
+		"parallel_tool_calls": false,
 		"tools": []any{
 			map[string]any{"type": "function", "name": "shell"},
 			map[string]any{"type": "custom", "name": "exec"},

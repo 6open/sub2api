@@ -434,20 +434,21 @@ func TestGetProfileIdentitySummaries_AllowsUnbindWhenAnotherLoginMethodRemains(t
 func TestUnbindUserAuthProviderRejectsLastRemainingLoginMethod(t *testing.T) {
 	repo := &mockUserRepo{
 		getByIDUser: &User{
-			ID:    9,
-			Email: "only-user@linuxdo-connect.invalid",
+			ID:           9,
+			Email:        "only-user@example.com",
+			SignupSource: "oidc",
 		},
 		identities: []UserAuthIdentityRecord{
 			{
-				ProviderType:    "linuxdo",
-				ProviderKey:     "linuxdo",
-				ProviderSubject: "linuxdo-only-subject",
+				ProviderType:    "oidc",
+				ProviderKey:     "https://issuer.example.com",
+				ProviderSubject: "oidc-only-subject",
 			},
 		},
 	}
 	svc := NewUserService(repo, nil, nil, nil)
 
-	_, err := svc.UnbindUserAuthProvider(context.Background(), 9, "linuxdo")
+	_, err := svc.UnbindUserAuthProvider(context.Background(), 9, "oidc")
 
 	require.ErrorIs(t, err, ErrIdentityUnbindLastMethod)
 	require.Empty(t, repo.unboundProviders)

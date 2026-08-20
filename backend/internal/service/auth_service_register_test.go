@@ -473,7 +473,7 @@ func TestAuthService_Register_AliasDuplicateRejected(t *testing.T) {
 		SettingKeyRegistrationEnabled: "true",
 	}, nil, nil)
 
-	_, _, err := service.Register(context.Background(), "some.one@gmail.com", "password")
+	_, _, err := service.Register(context.Background(), "some.one@example.com", "password")
 	require.ErrorIs(t, err, ErrEmailExists)
 	require.Empty(t, repo.created)
 }

@@ -353,7 +353,7 @@ func TestUserHandlerGetProfileReturnsLegacyCompatibilityFields(t *testing.T) {
 
 	linuxdoCompatBinding, ok := identityBindings["linuxdo"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "profile.authBindings.notes.canUnbind", linuxdoCompatBinding["note_key"])
+	require.Equal(t, "profile.authBindings.notes.bindAnotherBeforeUnbind", linuxdoCompatBinding["note_key"])
 
 	profileSources, ok := resp.Data["profile_sources"].(map[string]any)
 	require.True(t, ok)
@@ -583,9 +583,9 @@ func TestUserHandlerUnbindIdentityReturnsUpdatedProfile(t *testing.T) {
 				ProviderSubject: "identity@example.com",
 			},
 			{
-				ProviderType:    "linuxdo",
-				ProviderKey:     "linuxdo",
-				ProviderSubject: "linuxdo-subject-21",
+				ProviderType:    "oidc",
+				ProviderKey:     "https://issuer.example.com",
+				ProviderSubject: "oidc-subject-21",
 				Metadata: map[string]any{
 					"username": "linuxdo-handle",
 				},
@@ -596,14 +596,14 @@ func TestUserHandlerUnbindIdentityReturnsUpdatedProfile(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/user/account-bindings/linuxdo", nil)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/user/account-bindings/oidc", nil)
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 21})
-	c.Params = gin.Params{{Key: "provider", Value: "linuxdo"}}
+	c.Params = gin.Params{{Key: "provider", Value: "oidc"}}
 
 	handler.UnbindIdentity(c)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Equal(t, []string{"linuxdo"}, repo.unbound)
+	require.Equal(t, []string{"oidc"}, repo.unbound)
 
 	var resp struct {
 		Code int            `json:"code"`
@@ -614,9 +614,9 @@ func TestUserHandlerUnbindIdentityReturnsUpdatedProfile(t *testing.T) {
 
 	authBindings, ok := resp.Data["auth_bindings"].(map[string]any)
 	require.True(t, ok)
-	linuxdoBinding, ok := authBindings["linuxdo"].(map[string]any)
+	oidcBinding, ok := authBindings["oidc"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, false, linuxdoBinding["bound"])
+	require.Equal(t, false, oidcBinding["bound"])
 }
 
 func TestUserHandlerUnbindIdentityRevokesAllUserSessionsWhenAuthServiceConfigured(t *testing.T) {
@@ -638,9 +638,9 @@ func TestUserHandlerUnbindIdentityRevokesAllUserSessionsWhenAuthServiceConfigure
 				ProviderSubject: "identity@example.com",
 			},
 			{
-				ProviderType:    "linuxdo",
-				ProviderKey:     "linuxdo",
-				ProviderSubject: "linuxdo-subject-23",
+				ProviderType:    "oidc",
+				ProviderKey:     "https://issuer.example.com",
+				ProviderSubject: "oidc-subject-23",
 			},
 		},
 	}
@@ -656,9 +656,9 @@ func TestUserHandlerUnbindIdentityRevokesAllUserSessionsWhenAuthServiceConfigure
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/user/account-bindings/linuxdo", nil)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/user/account-bindings/oidc", nil)
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 23})
-	c.Params = gin.Params{{Key: "provider", Value: "linuxdo"}}
+	c.Params = gin.Params{{Key: "provider", Value: "oidc"}}
 
 	handler.UnbindIdentity(c)
 
@@ -703,9 +703,9 @@ func TestUserHandlerUnbindIdentityDoesNotRevokeSessionsWhenNothingWasUnbound(t *
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/user/account-bindings/linuxdo", nil)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/user/account-bindings/oidc", nil)
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 24})
-	c.Params = gin.Params{{Key: "provider", Value: "linuxdo"}}
+	c.Params = gin.Params{{Key: "provider", Value: "oidc"}}
 
 	handler.UnbindIdentity(c)
 
