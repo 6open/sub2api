@@ -778,6 +778,7 @@ export default {
         used: 'Used This Week',
         remaining: 'Remaining This Week',
         weeklyLimit: 'Weekly Limit',
+        week: 'week',
         newWeeklyLimit: 'Weekly Advanced Quota (USD)',
         resetUsage: 'Reset Weekly Usage',
         loadFailed: 'Failed to load advanced quota',

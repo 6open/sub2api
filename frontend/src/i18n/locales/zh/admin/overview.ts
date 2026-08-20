@@ -775,6 +775,7 @@ export default {
         used: '本周已用',
         remaining: '本周剩余',
         weeklyLimit: '每周上限',
+        week: '周',
         newWeeklyLimit: '设置每周高级额度 (USD)',
         resetUsage: '重置本周用量',
         loadFailed: '加载高级额度失败',

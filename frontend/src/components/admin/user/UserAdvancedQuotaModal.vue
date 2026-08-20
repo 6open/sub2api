@@ -6,9 +6,14 @@
     @close="$emit('close')"
   >
     <div v-if="user" class="space-y-5">
-      <p class="text-sm text-gray-600 dark:text-gray-400">
-        {{ user.email }}
-      </p>
+      <div class="flex min-w-0 items-center gap-3">
+        <div class="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
+          {{ user.email.charAt(0).toUpperCase() }}
+        </div>
+        <p class="min-w-0 truncate font-medium text-gray-900 dark:text-gray-100">
+          {{ user.email }}
+        </p>
+      </div>
 
       <div v-if="user.role === 'admin'" class="rounded-lg border border-primary-200 bg-primary-50 p-4 text-sm text-primary-700 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-300">
         {{ t('admin.users.advancedQuota.adminUnlimited') }}
@@ -17,42 +22,63 @@
         {{ t('common.loading') }}
       </div>
       <template v-else>
-        <div class="grid grid-cols-3 gap-3">
-          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
-            <p class="text-xs text-gray-500">{{ t('admin.users.advancedQuota.used') }}</p>
-            <p class="mt-1 font-semibold text-gray-900 dark:text-white">${{ fmt(usage) }}</p>
+        <div class="grid grid-cols-3 divide-x divide-gray-200 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:divide-dark-700 dark:border-dark-700 dark:bg-dark-900/30">
+          <div class="min-w-0 px-3 py-3.5 text-center">
+            <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ t('admin.users.advancedQuota.used') }}</p>
+            <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">${{ fmt(usage) }}</p>
           </div>
-          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
-            <p class="text-xs text-gray-500">{{ t('admin.users.advancedQuota.remaining') }}</p>
-            <p class="mt-1 font-semibold text-primary-600 dark:text-primary-400">${{ fmt(remaining) }}</p>
+          <div class="min-w-0 px-3 py-3.5 text-center">
+            <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ t('admin.users.advancedQuota.remaining') }}</p>
+            <p class="mt-1 text-base font-semibold text-primary-600 dark:text-primary-400">${{ fmt(remaining) }}</p>
           </div>
-          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
-            <p class="text-xs text-gray-500">{{ t('admin.users.advancedQuota.weeklyLimit') }}</p>
-            <p class="mt-1 font-semibold text-gray-900 dark:text-white">${{ fmt(currentLimit) }}</p>
+          <div class="min-w-0 px-3 py-3.5 text-center">
+            <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ t('admin.users.advancedQuota.weeklyLimit') }}</p>
+            <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">${{ fmt(currentLimit) }}</p>
           </div>
         </div>
 
-        <label class="block">
-          <span class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label class="block space-y-2">
+          <span class="input-label mb-0">
             {{ t('admin.users.advancedQuota.newWeeklyLimit') }}
           </span>
-          <input v-model.number="limitInput" type="number" min="0" step="1" class="input w-full" />
-        </label>
-
-        <div class="flex items-center justify-between border-t border-gray-200 pt-4 dark:border-dark-700">
-          <button type="button" class="btn-secondary" :disabled="resetting" @click="resetUsage">
-            <Icon name="refresh" size="sm" />
-            {{ resetting ? t('common.loading') : t('admin.users.advancedQuota.resetUsage') }}
-          </button>
-          <div class="flex gap-2">
-            <button type="button" class="btn-secondary" @click="$emit('close')">{{ t('common.cancel') }}</button>
-            <button type="button" class="btn-primary" :disabled="saving || !validLimit" @click="saveLimit">
-              {{ saving ? t('common.saving') : t('common.save') }}
-            </button>
+          <div class="relative">
+            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-medium text-gray-500 dark:text-gray-400">$</span>
+            <input v-model.number="limitInput" type="number" min="0" step="0.01" class="input pl-8 pr-20" />
+            <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 dark:text-gray-500">USD / {{ t('admin.users.advancedQuota.week') }}</span>
           </div>
-        </div>
+        </label>
       </template>
     </div>
+
+    <template #footer>
+      <div class="flex w-full flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          v-if="user?.role !== 'admin'"
+          type="button"
+          class="btn btn-secondary"
+          :disabled="loading || resetting"
+          @click="resetUsage"
+        >
+          <Icon name="refresh" size="sm" />
+          {{ resetting ? t('common.loading') : t('admin.users.advancedQuota.resetUsage') }}
+        </button>
+        <span v-else></span>
+        <div class="flex justify-end gap-3">
+          <button type="button" class="btn btn-secondary" @click="emit('close')">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            v-if="user?.role !== 'admin'"
+            type="button"
+            class="btn btn-primary"
+            :disabled="loading || saving || !validLimit"
+            @click="saveLimit"
+          >
+            {{ saving ? t('common.saving') : t('common.save') }}
+          </button>
+        </div>
+      </div>
+    </template>
   </BaseDialog>
 </template>
 
@@ -104,6 +130,7 @@ async function saveLimit() {
     quota.value = await adminAPI.users.updateOpenAIAdvancedQuota(props.user.id, limitInput.value)
     appStore.showSuccess(t('admin.users.advancedQuota.saved'))
     emit('success')
+    emit('close')
   } catch (error) {
     appStore.showError(t('admin.users.advancedQuota.saveFailed'))
   } finally {
