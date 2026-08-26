@@ -227,6 +227,41 @@ func (_u *UserPlatformQuotaUpdate) AddMonthlyUsageUsd(v float64) *UserPlatformQu
 	return _u
 }
 
+// SetSelfServiceResetCredits sets the "self_service_reset_credits" field.
+func (_u *UserPlatformQuotaUpdate) SetSelfServiceResetCredits(v int) *UserPlatformQuotaUpdate {
+	_u.mutation.ResetSelfServiceResetCredits()
+	_u.mutation.SetSelfServiceResetCredits(v)
+	return _u
+}
+
+// SetNillableSelfServiceResetCredits sets the "self_service_reset_credits" field if the given value is not nil.
+func (_u *UserPlatformQuotaUpdate) SetNillableSelfServiceResetCredits(v *int) *UserPlatformQuotaUpdate {
+	if v != nil {
+		_u.SetSelfServiceResetCredits(*v)
+	}
+	return _u
+}
+
+// AddSelfServiceResetCredits adds value to the "self_service_reset_credits" field.
+func (_u *UserPlatformQuotaUpdate) AddSelfServiceResetCredits(v int) *UserPlatformQuotaUpdate {
+	_u.mutation.AddSelfServiceResetCredits(v)
+	return _u
+}
+
+// SetSelfServiceResetGranted sets the "self_service_reset_granted" field.
+func (_u *UserPlatformQuotaUpdate) SetSelfServiceResetGranted(v bool) *UserPlatformQuotaUpdate {
+	_u.mutation.SetSelfServiceResetGranted(v)
+	return _u
+}
+
+// SetNillableSelfServiceResetGranted sets the "self_service_reset_granted" field if the given value is not nil.
+func (_u *UserPlatformQuotaUpdate) SetNillableSelfServiceResetGranted(v *bool) *UserPlatformQuotaUpdate {
+	if v != nil {
+		_u.SetSelfServiceResetGranted(*v)
+	}
+	return _u
+}
+
 // SetDailyWindowStart sets the "daily_window_start" field.
 func (_u *UserPlatformQuotaUpdate) SetDailyWindowStart(v time.Time) *UserPlatformQuotaUpdate {
 	_u.mutation.SetDailyWindowStart(v)
@@ -352,6 +387,11 @@ func (_u *UserPlatformQuotaUpdate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "UserPlatformQuota.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SelfServiceResetCredits(); ok {
+		if err := userplatformquota.SelfServiceResetCreditsValidator(v); err != nil {
+			return &ValidationError{Name: "self_service_reset_credits", err: fmt.Errorf(`ent: validator failed for field "UserPlatformQuota.self_service_reset_credits": %w`, err)}
+		}
+	}
 	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "UserPlatformQuota.user"`)
 	}
@@ -426,6 +466,15 @@ func (_u *UserPlatformQuotaUpdate) sqlSave(ctx context.Context) (_node int, err 
 	}
 	if value, ok := _u.mutation.AddedMonthlyUsageUsd(); ok {
 		_spec.AddField(userplatformquota.FieldMonthlyUsageUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.SelfServiceResetCredits(); ok {
+		_spec.SetField(userplatformquota.FieldSelfServiceResetCredits, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSelfServiceResetCredits(); ok {
+		_spec.AddField(userplatformquota.FieldSelfServiceResetCredits, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SelfServiceResetGranted(); ok {
+		_spec.SetField(userplatformquota.FieldSelfServiceResetGranted, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.DailyWindowStart(); ok {
 		_spec.SetField(userplatformquota.FieldDailyWindowStart, field.TypeTime, value)
@@ -692,6 +741,41 @@ func (_u *UserPlatformQuotaUpdateOne) AddMonthlyUsageUsd(v float64) *UserPlatfor
 	return _u
 }
 
+// SetSelfServiceResetCredits sets the "self_service_reset_credits" field.
+func (_u *UserPlatformQuotaUpdateOne) SetSelfServiceResetCredits(v int) *UserPlatformQuotaUpdateOne {
+	_u.mutation.ResetSelfServiceResetCredits()
+	_u.mutation.SetSelfServiceResetCredits(v)
+	return _u
+}
+
+// SetNillableSelfServiceResetCredits sets the "self_service_reset_credits" field if the given value is not nil.
+func (_u *UserPlatformQuotaUpdateOne) SetNillableSelfServiceResetCredits(v *int) *UserPlatformQuotaUpdateOne {
+	if v != nil {
+		_u.SetSelfServiceResetCredits(*v)
+	}
+	return _u
+}
+
+// AddSelfServiceResetCredits adds value to the "self_service_reset_credits" field.
+func (_u *UserPlatformQuotaUpdateOne) AddSelfServiceResetCredits(v int) *UserPlatformQuotaUpdateOne {
+	_u.mutation.AddSelfServiceResetCredits(v)
+	return _u
+}
+
+// SetSelfServiceResetGranted sets the "self_service_reset_granted" field.
+func (_u *UserPlatformQuotaUpdateOne) SetSelfServiceResetGranted(v bool) *UserPlatformQuotaUpdateOne {
+	_u.mutation.SetSelfServiceResetGranted(v)
+	return _u
+}
+
+// SetNillableSelfServiceResetGranted sets the "self_service_reset_granted" field if the given value is not nil.
+func (_u *UserPlatformQuotaUpdateOne) SetNillableSelfServiceResetGranted(v *bool) *UserPlatformQuotaUpdateOne {
+	if v != nil {
+		_u.SetSelfServiceResetGranted(*v)
+	}
+	return _u
+}
+
 // SetDailyWindowStart sets the "daily_window_start" field.
 func (_u *UserPlatformQuotaUpdateOne) SetDailyWindowStart(v time.Time) *UserPlatformQuotaUpdateOne {
 	_u.mutation.SetDailyWindowStart(v)
@@ -830,6 +914,11 @@ func (_u *UserPlatformQuotaUpdateOne) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "UserPlatformQuota.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SelfServiceResetCredits(); ok {
+		if err := userplatformquota.SelfServiceResetCreditsValidator(v); err != nil {
+			return &ValidationError{Name: "self_service_reset_credits", err: fmt.Errorf(`ent: validator failed for field "UserPlatformQuota.self_service_reset_credits": %w`, err)}
+		}
+	}
 	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "UserPlatformQuota.user"`)
 	}
@@ -921,6 +1010,15 @@ func (_u *UserPlatformQuotaUpdateOne) sqlSave(ctx context.Context) (_node *UserP
 	}
 	if value, ok := _u.mutation.AddedMonthlyUsageUsd(); ok {
 		_spec.AddField(userplatformquota.FieldMonthlyUsageUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.SelfServiceResetCredits(); ok {
+		_spec.SetField(userplatformquota.FieldSelfServiceResetCredits, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSelfServiceResetCredits(); ok {
+		_spec.AddField(userplatformquota.FieldSelfServiceResetCredits, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SelfServiceResetGranted(); ok {
+		_spec.SetField(userplatformquota.FieldSelfServiceResetGranted, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.DailyWindowStart(); ok {
 		_spec.SetField(userplatformquota.FieldDailyWindowStart, field.TypeTime, value)

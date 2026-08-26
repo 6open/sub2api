@@ -21,11 +21,40 @@ import (
 // fakeQuotaRepoForUserHandler 实现 service.UserPlatformQuotaRepository 最小子集
 type fakeQuotaRepoForUserHandler struct {
 	service.UserPlatformQuotaRepository
-	records []service.UserPlatformQuotaRecord
+	records      []service.UserPlatformQuotaRecord
+	consumeErr   error
+	consumeCalls int
 }
 
 func (f *fakeQuotaRepoForUserHandler) ListByUser(_ context.Context, _ int64) ([]service.UserPlatformQuotaRecord, error) {
 	return f.records, nil
+}
+
+func (f *fakeQuotaRepoForUserHandler) ConsumeSelfServiceWeeklyReset(_ context.Context, _ int64, _ string, _ time.Time) error {
+	f.consumeCalls++
+	return f.consumeErr
+}
+
+func (f *fakeQuotaRepoForUserHandler) GetByUserPlatform(_ context.Context, _ int64, platform string) (*service.UserPlatformQuotaRecord, error) {
+	for i := range f.records {
+		if f.records[i].Platform == platform {
+			record := f.records[i]
+			record.WeeklyUsageUSD = 0
+			record.SelfServiceResetCredits = 0
+			return &record, nil
+		}
+	}
+	return nil, nil
+}
+
+type fakeUserQuotaCache struct {
+	calls int
+	err   error
+}
+
+func (f *fakeUserQuotaCache) DeleteUserPlatformQuotaCache(_ context.Context, _ int64, _ string) error {
+	f.calls++
+	return f.err
 }
 
 func TestGetMyPlatformQuotas_EmptyReturns200WithEmptyArray(t *testing.T) {
@@ -113,6 +142,83 @@ func TestGetMyPlatformQuotas_NoAuth_Returns401(t *testing.T) {
 	h.GetMyPlatformQuotas(c)
 	if w.Code != 401 {
 		t.Fatalf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestResetMyOpenAIAdvancedQuota_ConsumesOnceAndReturnsFullQuota(t *testing.T) {
+	weekStart := timezone.StartOfWeek(time.Now().UTC())
+	limit := 50.0
+	repo := &fakeQuotaRepoForUserHandler{records: []service.UserPlatformQuotaRecord{{
+		UserID:                  42,
+		Platform:                service.PlatformOpenAIAdvanced,
+		WeeklyLimitUSD:          &limit,
+		WeeklyUsageUSD:          12.5,
+		WeeklyWindowStart:       &weekStart,
+		SelfServiceResetCredits: 1,
+	}}}
+	cache := &fakeUserQuotaCache{}
+	h := &UserHandler{userPlatformQuotaRepo: repo, userPlatformQuotaCache: cache}
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/user/platform-quotas/openai-advanced/reset", nil)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+	c.Set(string(middleware2.ContextKeyUserRole), service.RoleUser)
+
+	h.ResetMyOpenAIAdvancedQuota(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if repo.consumeCalls != 1 || cache.calls != 2 {
+		t.Fatalf("consume/cache calls = %d/%d, want 1/2", repo.consumeCalls, cache.calls)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `"weekly_usage_usd":0`) ||
+		!strings.Contains(body, `"self_service_reset_credits":0`) {
+		t.Fatalf("unexpected reset response: %s", body)
+	}
+}
+
+func TestResetMyOpenAIAdvancedQuota_NoCreditReturns409(t *testing.T) {
+	repo := &fakeQuotaRepoForUserHandler{consumeErr: service.ErrSelfServiceQuotaResetUnavailable}
+	cache := &fakeUserQuotaCache{}
+	h := &UserHandler{userPlatformQuotaRepo: repo, userPlatformQuotaCache: cache}
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/user/platform-quotas/openai-advanced/reset", nil)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+	c.Set(string(middleware2.ContextKeyUserRole), service.RoleUser)
+
+	h.ResetMyOpenAIAdvancedQuota(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	if cache.calls != 1 {
+		t.Fatalf("cache calls = %d, want 1", cache.calls)
+	}
+}
+
+func TestResetMyOpenAIAdvancedQuota_CacheFailureDoesNotConsumeCredit(t *testing.T) {
+	repo := &fakeQuotaRepoForUserHandler{}
+	cache := &fakeUserQuotaCache{err: context.DeadlineExceeded}
+	h := &UserHandler{userPlatformQuotaRepo: repo, userPlatformQuotaCache: cache}
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/user/platform-quotas/openai-advanced/reset", nil)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+	c.Set(string(middleware2.ContextKeyUserRole), service.RoleUser)
+
+	h.ResetMyOpenAIAdvancedQuota(c)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
+	}
+	if repo.consumeCalls != 0 {
+		t.Fatalf("consume calls = %d, want 0", repo.consumeCalls)
 	}
 }
 

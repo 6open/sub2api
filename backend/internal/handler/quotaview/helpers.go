@@ -16,16 +16,17 @@ func LazyZeroQuotaForResponse(r service.UserPlatformQuotaRecord, now time.Time, 
 	weekly := buildWindowSlice(r.WeeklyUsageUSD, r.WeeklyLimitUSD, r.WeeklyWindowStart, NeedsWeeklyReset(r.WeeklyWindowStart, now), nextWeeklyResetTime(now), includeWindowStart)
 	monthly := buildWindowSlice(r.MonthlyUsageUSD, r.MonthlyLimitUSD, r.MonthlyWindowStart, NeedsMonthlyReset(r.MonthlyWindowStart, now), NextMonthlyResetTimeFrom(r.MonthlyWindowStart, now), includeWindowStart)
 	out := map[string]any{
-		"platform":                 r.Platform,
-		"daily_usage_usd":          daily.usage,
-		"daily_limit_usd":          daily.limit,
-		"daily_window_resets_at":   daily.resetsAt,
-		"weekly_usage_usd":         weekly.usage,
-		"weekly_limit_usd":         weekly.limit,
-		"weekly_window_resets_at":  weekly.resetsAt,
-		"monthly_usage_usd":        monthly.usage,
-		"monthly_limit_usd":        monthly.limit,
-		"monthly_window_resets_at": monthly.resetsAt,
+		"platform":                   r.Platform,
+		"daily_usage_usd":            daily.usage,
+		"daily_limit_usd":            daily.limit,
+		"daily_window_resets_at":     daily.resetsAt,
+		"weekly_usage_usd":           weekly.usage,
+		"weekly_limit_usd":           weekly.limit,
+		"weekly_window_resets_at":    weekly.resetsAt,
+		"monthly_usage_usd":          monthly.usage,
+		"monthly_limit_usd":          monthly.limit,
+		"monthly_window_resets_at":   monthly.resetsAt,
+		"self_service_reset_credits": r.SelfServiceResetCredits,
 	}
 	if includeWindowStart {
 		out["daily_window_start"] = daily.windowStart

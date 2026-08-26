@@ -53771,34 +53771,37 @@ func (m *UserAttributeValueMutation) ResetEdge(name string) error {
 // UserPlatformQuotaMutation represents an operation that mutates the UserPlatformQuota nodes in the graph.
 type UserPlatformQuotaMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *int64
-	created_at           *time.Time
-	updated_at           *time.Time
-	deleted_at           *time.Time
-	platform             *string
-	daily_limit_usd      *float64
-	adddaily_limit_usd   *float64
-	weekly_limit_usd     *float64
-	addweekly_limit_usd  *float64
-	monthly_limit_usd    *float64
-	addmonthly_limit_usd *float64
-	daily_usage_usd      *float64
-	adddaily_usage_usd   *float64
-	weekly_usage_usd     *float64
-	addweekly_usage_usd  *float64
-	monthly_usage_usd    *float64
-	addmonthly_usage_usd *float64
-	daily_window_start   *time.Time
-	weekly_window_start  *time.Time
-	monthly_window_start *time.Time
-	clearedFields        map[string]struct{}
-	user                 *int64
-	cleareduser          bool
-	done                 bool
-	oldValue             func(context.Context) (*UserPlatformQuota, error)
-	predicates           []predicate.UserPlatformQuota
+	op                            Op
+	typ                           string
+	id                            *int64
+	created_at                    *time.Time
+	updated_at                    *time.Time
+	deleted_at                    *time.Time
+	platform                      *string
+	daily_limit_usd               *float64
+	adddaily_limit_usd            *float64
+	weekly_limit_usd              *float64
+	addweekly_limit_usd           *float64
+	monthly_limit_usd             *float64
+	addmonthly_limit_usd          *float64
+	daily_usage_usd               *float64
+	adddaily_usage_usd            *float64
+	weekly_usage_usd              *float64
+	addweekly_usage_usd           *float64
+	monthly_usage_usd             *float64
+	addmonthly_usage_usd          *float64
+	self_service_reset_credits    *int
+	addself_service_reset_credits *int
+	self_service_reset_granted    *bool
+	daily_window_start            *time.Time
+	weekly_window_start           *time.Time
+	monthly_window_start          *time.Time
+	clearedFields                 map[string]struct{}
+	user                          *int64
+	cleareduser                   bool
+	done                          bool
+	oldValue                      func(context.Context) (*UserPlatformQuota, error)
+	predicates                    []predicate.UserPlatformQuota
 }
 
 var _ ent.Mutation = (*UserPlatformQuotaMutation)(nil)
@@ -54470,6 +54473,98 @@ func (m *UserPlatformQuotaMutation) ResetMonthlyUsageUsd() {
 	m.addmonthly_usage_usd = nil
 }
 
+// SetSelfServiceResetCredits sets the "self_service_reset_credits" field.
+func (m *UserPlatformQuotaMutation) SetSelfServiceResetCredits(i int) {
+	m.self_service_reset_credits = &i
+	m.addself_service_reset_credits = nil
+}
+
+// SelfServiceResetCredits returns the value of the "self_service_reset_credits" field in the mutation.
+func (m *UserPlatformQuotaMutation) SelfServiceResetCredits() (r int, exists bool) {
+	v := m.self_service_reset_credits
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSelfServiceResetCredits returns the old "self_service_reset_credits" field's value of the UserPlatformQuota entity.
+// If the UserPlatformQuota object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserPlatformQuotaMutation) OldSelfServiceResetCredits(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSelfServiceResetCredits is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSelfServiceResetCredits requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSelfServiceResetCredits: %w", err)
+	}
+	return oldValue.SelfServiceResetCredits, nil
+}
+
+// AddSelfServiceResetCredits adds i to the "self_service_reset_credits" field.
+func (m *UserPlatformQuotaMutation) AddSelfServiceResetCredits(i int) {
+	if m.addself_service_reset_credits != nil {
+		*m.addself_service_reset_credits += i
+	} else {
+		m.addself_service_reset_credits = &i
+	}
+}
+
+// AddedSelfServiceResetCredits returns the value that was added to the "self_service_reset_credits" field in this mutation.
+func (m *UserPlatformQuotaMutation) AddedSelfServiceResetCredits() (r int, exists bool) {
+	v := m.addself_service_reset_credits
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSelfServiceResetCredits resets all changes to the "self_service_reset_credits" field.
+func (m *UserPlatformQuotaMutation) ResetSelfServiceResetCredits() {
+	m.self_service_reset_credits = nil
+	m.addself_service_reset_credits = nil
+}
+
+// SetSelfServiceResetGranted sets the "self_service_reset_granted" field.
+func (m *UserPlatformQuotaMutation) SetSelfServiceResetGranted(b bool) {
+	m.self_service_reset_granted = &b
+}
+
+// SelfServiceResetGranted returns the value of the "self_service_reset_granted" field in the mutation.
+func (m *UserPlatformQuotaMutation) SelfServiceResetGranted() (r bool, exists bool) {
+	v := m.self_service_reset_granted
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSelfServiceResetGranted returns the old "self_service_reset_granted" field's value of the UserPlatformQuota entity.
+// If the UserPlatformQuota object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserPlatformQuotaMutation) OldSelfServiceResetGranted(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSelfServiceResetGranted is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSelfServiceResetGranted requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSelfServiceResetGranted: %w", err)
+	}
+	return oldValue.SelfServiceResetGranted, nil
+}
+
+// ResetSelfServiceResetGranted resets all changes to the "self_service_reset_granted" field.
+func (m *UserPlatformQuotaMutation) ResetSelfServiceResetGranted() {
+	m.self_service_reset_granted = nil
+}
+
 // SetDailyWindowStart sets the "daily_window_start" field.
 func (m *UserPlatformQuotaMutation) SetDailyWindowStart(t time.Time) {
 	m.daily_window_start = &t
@@ -54678,7 +54773,7 @@ func (m *UserPlatformQuotaMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserPlatformQuotaMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 16)
 	if m.created_at != nil {
 		fields = append(fields, userplatformquota.FieldCreatedAt)
 	}
@@ -54711,6 +54806,12 @@ func (m *UserPlatformQuotaMutation) Fields() []string {
 	}
 	if m.monthly_usage_usd != nil {
 		fields = append(fields, userplatformquota.FieldMonthlyUsageUsd)
+	}
+	if m.self_service_reset_credits != nil {
+		fields = append(fields, userplatformquota.FieldSelfServiceResetCredits)
+	}
+	if m.self_service_reset_granted != nil {
+		fields = append(fields, userplatformquota.FieldSelfServiceResetGranted)
 	}
 	if m.daily_window_start != nil {
 		fields = append(fields, userplatformquota.FieldDailyWindowStart)
@@ -54751,6 +54852,10 @@ func (m *UserPlatformQuotaMutation) Field(name string) (ent.Value, bool) {
 		return m.WeeklyUsageUsd()
 	case userplatformquota.FieldMonthlyUsageUsd:
 		return m.MonthlyUsageUsd()
+	case userplatformquota.FieldSelfServiceResetCredits:
+		return m.SelfServiceResetCredits()
+	case userplatformquota.FieldSelfServiceResetGranted:
+		return m.SelfServiceResetGranted()
 	case userplatformquota.FieldDailyWindowStart:
 		return m.DailyWindowStart()
 	case userplatformquota.FieldWeeklyWindowStart:
@@ -54788,6 +54893,10 @@ func (m *UserPlatformQuotaMutation) OldField(ctx context.Context, name string) (
 		return m.OldWeeklyUsageUsd(ctx)
 	case userplatformquota.FieldMonthlyUsageUsd:
 		return m.OldMonthlyUsageUsd(ctx)
+	case userplatformquota.FieldSelfServiceResetCredits:
+		return m.OldSelfServiceResetCredits(ctx)
+	case userplatformquota.FieldSelfServiceResetGranted:
+		return m.OldSelfServiceResetGranted(ctx)
 	case userplatformquota.FieldDailyWindowStart:
 		return m.OldDailyWindowStart(ctx)
 	case userplatformquota.FieldWeeklyWindowStart:
@@ -54880,6 +54989,20 @@ func (m *UserPlatformQuotaMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetMonthlyUsageUsd(v)
 		return nil
+	case userplatformquota.FieldSelfServiceResetCredits:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSelfServiceResetCredits(v)
+		return nil
+	case userplatformquota.FieldSelfServiceResetGranted:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSelfServiceResetGranted(v)
+		return nil
 	case userplatformquota.FieldDailyWindowStart:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -54927,6 +55050,9 @@ func (m *UserPlatformQuotaMutation) AddedFields() []string {
 	if m.addmonthly_usage_usd != nil {
 		fields = append(fields, userplatformquota.FieldMonthlyUsageUsd)
 	}
+	if m.addself_service_reset_credits != nil {
+		fields = append(fields, userplatformquota.FieldSelfServiceResetCredits)
+	}
 	return fields
 }
 
@@ -54947,6 +55073,8 @@ func (m *UserPlatformQuotaMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedWeeklyUsageUsd()
 	case userplatformquota.FieldMonthlyUsageUsd:
 		return m.AddedMonthlyUsageUsd()
+	case userplatformquota.FieldSelfServiceResetCredits:
+		return m.AddedSelfServiceResetCredits()
 	}
 	return nil, false
 }
@@ -54997,6 +55125,13 @@ func (m *UserPlatformQuotaMutation) AddField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddMonthlyUsageUsd(v)
+		return nil
+	case userplatformquota.FieldSelfServiceResetCredits:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSelfServiceResetCredits(v)
 		return nil
 	}
 	return fmt.Errorf("unknown UserPlatformQuota numeric field %s", name)
@@ -55102,6 +55237,12 @@ func (m *UserPlatformQuotaMutation) ResetField(name string) error {
 		return nil
 	case userplatformquota.FieldMonthlyUsageUsd:
 		m.ResetMonthlyUsageUsd()
+		return nil
+	case userplatformquota.FieldSelfServiceResetCredits:
+		m.ResetSelfServiceResetCredits()
+		return nil
+	case userplatformquota.FieldSelfServiceResetGranted:
+		m.ResetSelfServiceResetGranted()
 		return nil
 	case userplatformquota.FieldDailyWindowStart:
 		m.ResetDailyWindowStart()

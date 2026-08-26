@@ -2,12 +2,15 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/handler/quotaview"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -16,12 +19,17 @@ import (
 
 // UserHandler handles user-related requests
 type UserHandler struct {
-	userService           *service.UserService
-	authService           *service.AuthService
-	emailService          *service.EmailService
-	emailCache            service.EmailCache
-	affiliateService      *service.AffiliateService
-	userPlatformQuotaRepo service.UserPlatformQuotaRepository
+	userService            *service.UserService
+	authService            *service.AuthService
+	emailService           *service.EmailService
+	emailCache             service.EmailCache
+	affiliateService       *service.AffiliateService
+	userPlatformQuotaRepo  service.UserPlatformQuotaRepository
+	userPlatformQuotaCache userPlatformQuotaCacheInvalidator
+}
+
+type userPlatformQuotaCacheInvalidator interface {
+	DeleteUserPlatformQuotaCache(ctx context.Context, userID int64, platform string) error
 }
 
 // NewUserHandler creates a new UserHandler
@@ -67,6 +75,61 @@ func (h *UserHandler) GetMyPlatformQuotas(c *gin.Context) {
 		out = append(out, quotaview.LazyZeroQuotaForResponse(r, now, false))
 	}
 	response.Success(c, map[string]any{"platform_quotas": out})
+}
+
+// ResetMyOpenAIAdvancedQuota POST /user/platform-quotas/openai-advanced/reset
+// 消费用户唯一一次自助重置机会，并恢复本周完整高级额度。
+func (h *UserHandler) ResetMyOpenAIAdvancedQuota(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if role, _ := middleware2.GetUserRoleFromContext(c); role == service.RoleAdmin {
+		response.Forbidden(c, "admin accounts have unlimited advanced quota")
+		return
+	}
+	if h.userPlatformQuotaRepo == nil || h.userPlatformQuotaCache == nil {
+		response.Error(c, 503, "advanced quota reset service not available")
+		return
+	}
+
+	ctx := c.Request.Context()
+	// 先删除旧缓存；若缓存不可用则不消费重置卡，避免数据库已重置但网关仍读到旧额度。
+	if err := h.userPlatformQuotaCache.DeleteUserPlatformQuotaCache(ctx, subject.UserID, service.PlatformOpenAIAdvanced); err != nil {
+		slog.Error("advanced quota pre-reset cache invalidation failed", "user_id", subject.UserID, "error", err)
+		response.Error(c, 503, "advanced quota reset service temporarily unavailable")
+		return
+	}
+
+	weekStart := timezone.StartOfWeek(time.Now().UTC())
+	if err := h.userPlatformQuotaRepo.ConsumeSelfServiceWeeklyReset(ctx, subject.UserID, service.PlatformOpenAIAdvanced, weekStart); err != nil {
+		if errors.Is(err, service.ErrSelfServiceQuotaResetUnavailable) {
+			response.ErrorWithDetails(c, 409, "no reset opportunity is available", "ADVANCED_QUOTA_RESET_UNAVAILABLE", nil)
+			return
+		}
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	// 再删一次，覆盖“首次失效后、数据库提交前”并发请求重新装载旧快照的窄窗口。
+	if err := h.userPlatformQuotaCache.DeleteUserPlatformQuotaCache(ctx, subject.UserID, service.PlatformOpenAIAdvanced); err != nil {
+		slog.Error("ALERT: advanced quota post-reset cache invalidation failed", "user_id", subject.UserID, "error", err)
+	}
+
+	record, err := h.userPlatformQuotaRepo.GetByUserPlatform(ctx, subject.UserID, service.PlatformOpenAIAdvanced)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if record == nil {
+		response.NotFound(c, "advanced quota not found")
+		return
+	}
+	slog.Info("user.openai_advanced_quota_self_reset", "user_id", subject.UserID)
+	response.Success(c, map[string]any{
+		"platform_quota": quotaview.LazyZeroQuotaForResponse(*record, time.Now().UTC(), false),
+	})
 }
 
 // ChangePasswordRequest represents the change password request payload

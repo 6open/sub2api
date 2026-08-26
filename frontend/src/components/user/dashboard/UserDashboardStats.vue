@@ -7,7 +7,7 @@
         <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
           <Icon name="bolt" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
         </div>
-        <div>
+        <div class="min-w-0 flex-1">
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.advancedQuota') }}</p>
           <p v-if="isAdmin" class="text-xl font-bold text-emerald-600 dark:text-emerald-400">
             {{ t('dashboard.advancedQuotaUnlimited') }}
@@ -20,7 +20,21 @@
           <p v-if="!isAdmin && advancedWeeklyLimit != null" class="text-xs text-gray-500 dark:text-gray-400">
             {{ t('dashboard.advancedQuotaUsed', { used: formatUsd(advancedWeeklyUsage) }) }}
           </p>
+          <p v-if="hasAdvancedResetCredit" class="text-xs text-emerald-600 dark:text-emerald-400">
+            {{ t('dashboard.advancedQuotaResetAvailable') }}
+          </p>
         </div>
+        <button
+          v-if="canResetAdvancedQuota"
+          type="button"
+          class="btn btn-secondary btn-icon h-8 w-8 shrink-0"
+          :disabled="advancedResetLoading"
+          :title="t('dashboard.advancedQuotaResetButton')"
+          :aria-label="t('dashboard.advancedQuotaResetButton')"
+          @click="emit('reset-advanced-quota')"
+        >
+          <Icon name="refresh" size="sm" :class="{ 'animate-spin': advancedResetLoading }" />
+        </button>
       </div>
     </div>
 
@@ -251,6 +265,10 @@ const props = defineProps<{
   isSimple: boolean
   isAdmin: boolean
   platformQuotas?: PlatformQuotaItem[] | null
+  advancedResetLoading?: boolean
+}>()
+const emit = defineEmits<{
+  (e: 'reset-advanced-quota'): void
 }>()
 const { t } = useI18n()
 
@@ -269,6 +287,12 @@ const advancedQuota = computed(() =>
 )
 const advancedWeeklyLimit = computed(() => advancedQuota.value?.weekly_limit_usd ?? null)
 const advancedWeeklyUsage = computed(() => advancedQuota.value?.weekly_usage_usd ?? 0)
+const hasAdvancedResetCredit = computed(
+  () => !props.isAdmin && (advancedQuota.value?.self_service_reset_credits ?? 0) > 0
+)
+const canResetAdvancedQuota = computed(
+  () => hasAdvancedResetCredit.value && advancedWeeklyUsage.value > 0
+)
 const advancedRemaining = computed(() =>
   Math.max(0, (advancedWeeklyLimit.value ?? 0) - advancedWeeklyUsage.value)
 )

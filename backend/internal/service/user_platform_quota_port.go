@@ -15,6 +15,9 @@ var ErrUserPlatformQuotaNotFound = errors.New("user platform quota not found")
 // user_id 不在 users 表的记录（外键违反）。adapter 负责将 repository 层同名 sentinel 包装为此错误。
 var ErrUserPlatformQuotaFKViolation = errors.New("user platform quota snapshot FK violation")
 
+// ErrSelfServiceQuotaResetUnavailable 表示没有可用重置卡，或当前周额度已经是满额状态。
+var ErrSelfServiceQuotaResetUnavailable = errors.New("self-service quota reset unavailable")
+
 // UserPlatformQuotaSnapshot 是 service 层 flusher 向 DB 写入快照时使用的传输结构。
 // 字段语义与 repository.UserPlatformQuotaSnapshot 完全对应，由 adapter 负责转换。
 type UserPlatformQuotaSnapshot struct {
@@ -38,6 +41,8 @@ type UserPlatformQuotaRecord struct {
 	DailyUsageUSD   float64
 	WeeklyUsageUSD  float64
 	MonthlyUsageUSD float64
+	// SelfServiceResetCredits 是用户可自行消费的重置次数；当前仅高级额度使用。
+	SelfServiceResetCredits int
 	// 窗口起始时间（可选，用于未来 reset 校验）
 	DailyWindowStart   *time.Time
 	WeeklyWindowStart  *time.Time
@@ -64,6 +69,8 @@ type UserPlatformQuotaRepository interface {
 	// ResetExpiredWindow 重置指定窗口（"daily"|"weekly"|"monthly"）的用量与起始时间。
 	// 未命中活跃记录时返回（service-side wrapper of repository.ErrUserPlatformQuotaNotFound）。
 	ResetExpiredWindow(ctx context.Context, userID int64, platform string, window string, newStart time.Time) error
+	// ConsumeSelfServiceWeeklyReset 原子扣减一次自助重置机会并清零当前周用量。
+	ConsumeSelfServiceWeeklyReset(ctx context.Context, userID int64, platform string, currentWeekStart time.Time) error
 	// BatchSnapshotUsage 绝对值覆盖写入整批 usage 快照。FK 违反返回 ErrUserPlatformQuotaFKViolation。
 	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
 }

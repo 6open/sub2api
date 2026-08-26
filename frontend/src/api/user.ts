@@ -16,6 +16,7 @@ import type {
   UserAuthProvider,
   UserAffiliateDetail,
   AffiliateTransferResponse,
+  PlatformQuotaItem,
   PlatformQuotasResponse,
 } from '@/types'
 
@@ -194,6 +195,13 @@ export async function getMyPlatformQuotas(): Promise<PlatformQuotasResponse> {
   return data
 }
 
+export async function resetMyOpenAIAdvancedQuota(): Promise<{ platform_quota: PlatformQuotaItem }> {
+  const { data } = await apiClient.post<{ platform_quota: PlatformQuotaItem }>(
+    '/user/platform-quotas/openai-advanced/reset'
+  )
+  return data
+}
+
 export const userAPI = {
   getProfile,
   updateProfile,
@@ -210,6 +218,7 @@ export const userAPI = {
   getAffiliateDetail,
   transferAffiliateQuota,
   getMyPlatformQuotas,
+  resetMyOpenAIAdvancedQuota,
 }
 
 export default userAPI

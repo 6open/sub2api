@@ -16,17 +16,18 @@ import (
 // UserPlatformQuotaRecord 是 repository 层的传输结构体，
 // 与 ent.UserPlatformQuota 实体解耦，供业务层使用。
 type UserPlatformQuotaRecord struct {
-	UserID             int64
-	Platform           string
-	DailyLimitUSD      *float64
-	WeeklyLimitUSD     *float64
-	MonthlyLimitUSD    *float64
-	DailyUsageUSD      float64
-	WeeklyUsageUSD     float64
-	MonthlyUsageUSD    float64
-	DailyWindowStart   *time.Time
-	WeeklyWindowStart  *time.Time
-	MonthlyWindowStart *time.Time
+	UserID                  int64
+	Platform                string
+	DailyLimitUSD           *float64
+	WeeklyLimitUSD          *float64
+	MonthlyLimitUSD         *float64
+	DailyUsageUSD           float64
+	WeeklyUsageUSD          float64
+	MonthlyUsageUSD         float64
+	SelfServiceResetCredits int
+	DailyWindowStart        *time.Time
+	WeeklyWindowStart       *time.Time
+	MonthlyWindowStart      *time.Time
 }
 
 // ErrUserPlatformQuotaNotFound 用于 ResetExpiredWindow 等需要"必须命中已有记录"的方法。
@@ -34,6 +35,9 @@ var ErrUserPlatformQuotaNotFound = fmt.Errorf("user platform quota record not fo
 
 // ErrUserPlatformQuotaFKViolation 当批量 UPSERT 中存在 user_id 不在 users 表的记录时返回。
 var ErrUserPlatformQuotaFKViolation = errors.New("user platform quota snapshot FK violation")
+
+// ErrSelfServiceQuotaResetUnavailable 表示没有可用重置卡，或本周当前没有可重置的用量。
+var ErrSelfServiceQuotaResetUnavailable = errors.New("self-service quota reset unavailable")
 
 // UserPlatformQuotaSnapshot 是 BatchSnapshotUsage 的输入结构体，
 // 表示 Redis 当前窗口快照（用于绝对值覆盖写入 DB）。
@@ -60,6 +64,8 @@ type UserPlatformQuotaRepository interface {
 	IncrementUsageWithReset(ctx context.Context, userID int64, platform string, cost float64, now time.Time) error
 	// ResetExpiredWindow 重置指定窗口（daily/weekly/monthly）的用量与起始时间。
 	ResetExpiredWindow(ctx context.Context, userID int64, platform string, window string, newStart time.Time) error
+	// ConsumeSelfServiceWeeklyReset 原子扣减一次自助重置机会并清零当前周用量。
+	ConsumeSelfServiceWeeklyReset(ctx context.Context, userID int64, platform string, currentWeekStart time.Time) error
 	// UpsertForUser 全量替换该用户所有平台限额配置（详见 service.UserPlatformQuotaRepository.UpsertForUser）。
 	UpsertForUser(ctx context.Context, userID int64, records []UserPlatformQuotaRecord) error
 	// BatchSnapshotUsage 用一条多行 UPSERT 把整批 usage 以绝对值覆盖写入(非累加)。
@@ -96,21 +102,22 @@ func (r *userPlatformQuotaRepository) BulkInsertInitial(ctx context.Context, rec
 	client := clientFromContext(ctx, r.client)
 
 	var sb strings.Builder
-	_, _ = sb.WriteString("INSERT INTO user_platform_quotas (user_id, platform, daily_limit_usd, weekly_limit_usd, monthly_limit_usd, daily_usage_usd, weekly_usage_usd, monthly_usage_usd, created_at, updated_at) VALUES ")
-	args := make([]any, 0, len(records)*6)
+	_, _ = sb.WriteString("INSERT INTO user_platform_quotas (user_id, platform, daily_limit_usd, weekly_limit_usd, monthly_limit_usd, daily_usage_usd, weekly_usage_usd, monthly_usage_usd, self_service_reset_credits, self_service_reset_granted, created_at, updated_at) VALUES ")
+	args := make([]any, 0, len(records)*7)
 	// 统一时间戳：避免循环内多次 time.Now() 让同一批记录的 created_at/updated_at
 	// 出现亚毫秒级偏差（与 UpsertForUser 的 now := time.Now() 风格一致）。
 	now := time.Now()
 	for i, rec := range records {
-		base := i * 6
+		base := i * 7
 		if i > 0 {
 			_, _ = sb.WriteString(",")
 		}
-		fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d,0,0,0,$%d,$%d)",
-			base+1, base+2, base+3, base+4, base+5, base+6, base+6)
+		fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d,0,0,0,$%d,($%d > 0),$%d,$%d)",
+			base+1, base+2, base+3, base+4, base+5, base+6, base+6, base+7, base+7)
 		args = append(args,
 			rec.UserID, rec.Platform,
 			rec.DailyLimitUSD, rec.WeeklyLimitUSD, rec.MonthlyLimitUSD,
+			rec.SelfServiceResetCredits,
 			now,
 		)
 	}
@@ -123,6 +130,14 @@ func (r *userPlatformQuotaRepository) BulkInsertInitial(ctx context.Context, rec
 			daily_limit_usd   = COALESCE(user_platform_quotas.daily_limit_usd, EXCLUDED.daily_limit_usd),
 			weekly_limit_usd  = COALESCE(user_platform_quotas.weekly_limit_usd, EXCLUDED.weekly_limit_usd),
 			monthly_limit_usd = COALESCE(user_platform_quotas.monthly_limit_usd, EXCLUDED.monthly_limit_usd),
+			self_service_reset_credits = CASE
+				WHEN user_platform_quotas.weekly_limit_usd IS NULL
+					AND user_platform_quotas.self_service_reset_granted = FALSE
+				THEN EXCLUDED.self_service_reset_credits
+				ELSE user_platform_quotas.self_service_reset_credits
+			END,
+			self_service_reset_granted = user_platform_quotas.self_service_reset_granted
+				OR EXCLUDED.self_service_reset_granted,
 			updated_at        = EXCLUDED.updated_at`)
 
 	_, err := client.ExecContext(ctx, sb.String(), args...)
@@ -269,6 +284,36 @@ func (r *userPlatformQuotaRepository) ResetExpiredWindow(ctx context.Context, us
 	return nil
 }
 
+// ConsumeSelfServiceWeeklyReset 使用一张重置卡恢复当前周额度。
+// WHERE 同时约束当前周、本周已有消费和剩余次数，保证并发调用最多成功一次，
+// 也避免用户在自然周已过期或满额时误耗重置卡。
+func (r *userPlatformQuotaRepository) ConsumeSelfServiceWeeklyReset(ctx context.Context, userID int64, platform string, currentWeekStart time.Time) error {
+	client := clientFromContext(ctx, r.client)
+	const query = `UPDATE user_platform_quotas
+		SET weekly_usage_usd = 0,
+		    weekly_window_start = $3,
+		    self_service_reset_credits = self_service_reset_credits - 1,
+		    updated_at = NOW()
+		WHERE user_id = $1
+		  AND platform = $2
+		  AND deleted_at IS NULL
+		  AND weekly_window_start = $3
+		  AND weekly_usage_usd > 0
+		  AND self_service_reset_credits > 0`
+	result, err := client.ExecContext(ctx, query, userID, platform, currentWeekStart)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrSelfServiceQuotaResetUnavailable
+	}
+	return nil
+}
+
 // withTx 在事务中执行 fn，若 ctx 中已有事务则复用。
 func (r *userPlatformQuotaRepository) withTx(ctx context.Context, fn func(txCtx context.Context, txClient *dbent.Client) error) error {
 	if tx := dbent.TxFromContext(ctx); tx != nil {
@@ -296,17 +341,18 @@ func (r *userPlatformQuotaRepository) withTx(ctx context.Context, fn func(txCtx 
 // 注意 ent 生成字段名为 DailyLimitUsd（非 DailyLimitUSD）。
 func entQuotaToRecord(e *dbent.UserPlatformQuota) *UserPlatformQuotaRecord {
 	return &UserPlatformQuotaRecord{
-		UserID:             e.UserID,
-		Platform:           e.Platform,
-		DailyLimitUSD:      e.DailyLimitUsd,
-		WeeklyLimitUSD:     e.WeeklyLimitUsd,
-		MonthlyLimitUSD:    e.MonthlyLimitUsd,
-		DailyUsageUSD:      e.DailyUsageUsd,
-		WeeklyUsageUSD:     e.WeeklyUsageUsd,
-		MonthlyUsageUSD:    e.MonthlyUsageUsd,
-		DailyWindowStart:   e.DailyWindowStart,
-		WeeklyWindowStart:  e.WeeklyWindowStart,
-		MonthlyWindowStart: e.MonthlyWindowStart,
+		UserID:                  e.UserID,
+		Platform:                e.Platform,
+		DailyLimitUSD:           e.DailyLimitUsd,
+		WeeklyLimitUSD:          e.WeeklyLimitUsd,
+		MonthlyLimitUSD:         e.MonthlyLimitUsd,
+		DailyUsageUSD:           e.DailyUsageUsd,
+		WeeklyUsageUSD:          e.WeeklyUsageUsd,
+		MonthlyUsageUSD:         e.MonthlyUsageUsd,
+		SelfServiceResetCredits: e.SelfServiceResetCredits,
+		DailyWindowStart:        e.DailyWindowStart,
+		WeeklyWindowStart:       e.WeeklyWindowStart,
+		MonthlyWindowStart:      e.MonthlyWindowStart,
 	}
 }
 

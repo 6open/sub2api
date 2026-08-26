@@ -2167,9 +2167,10 @@ func (s *AuthService) snapshotPlatformQuotaDefaults(ctx context.Context, userID 
 	if advancedQuotaEnabled {
 		weeklyLimit := s.cfg.Gateway.OpenAIAdvancedQuota.WeeklyLimitUSD
 		records = append(records, UserPlatformQuotaRecord{
-			UserID:         userID,
-			Platform:       PlatformOpenAIAdvanced,
-			WeeklyLimitUSD: &weeklyLimit,
+			UserID:                  userID,
+			Platform:                PlatformOpenAIAdvanced,
+			WeeklyLimitUSD:          &weeklyLimit,
+			SelfServiceResetCredits: 1,
 		})
 	}
 	if err := s.userPlatformQuotaRepo.BulkInsertInitial(ctx, records); err != nil {

@@ -161,6 +161,34 @@ func (_c *UserPlatformQuotaCreate) SetNillableMonthlyUsageUsd(v *float64) *UserP
 	return _c
 }
 
+// SetSelfServiceResetCredits sets the "self_service_reset_credits" field.
+func (_c *UserPlatformQuotaCreate) SetSelfServiceResetCredits(v int) *UserPlatformQuotaCreate {
+	_c.mutation.SetSelfServiceResetCredits(v)
+	return _c
+}
+
+// SetNillableSelfServiceResetCredits sets the "self_service_reset_credits" field if the given value is not nil.
+func (_c *UserPlatformQuotaCreate) SetNillableSelfServiceResetCredits(v *int) *UserPlatformQuotaCreate {
+	if v != nil {
+		_c.SetSelfServiceResetCredits(*v)
+	}
+	return _c
+}
+
+// SetSelfServiceResetGranted sets the "self_service_reset_granted" field.
+func (_c *UserPlatformQuotaCreate) SetSelfServiceResetGranted(v bool) *UserPlatformQuotaCreate {
+	_c.mutation.SetSelfServiceResetGranted(v)
+	return _c
+}
+
+// SetNillableSelfServiceResetGranted sets the "self_service_reset_granted" field if the given value is not nil.
+func (_c *UserPlatformQuotaCreate) SetNillableSelfServiceResetGranted(v *bool) *UserPlatformQuotaCreate {
+	if v != nil {
+		_c.SetSelfServiceResetGranted(*v)
+	}
+	return _c
+}
+
 // SetDailyWindowStart sets the "daily_window_start" field.
 func (_c *UserPlatformQuotaCreate) SetDailyWindowStart(v time.Time) *UserPlatformQuotaCreate {
 	_c.mutation.SetDailyWindowStart(v)
@@ -271,6 +299,14 @@ func (_c *UserPlatformQuotaCreate) defaults() error {
 		v := userplatformquota.DefaultMonthlyUsageUsd
 		_c.mutation.SetMonthlyUsageUsd(v)
 	}
+	if _, ok := _c.mutation.SelfServiceResetCredits(); !ok {
+		v := userplatformquota.DefaultSelfServiceResetCredits
+		_c.mutation.SetSelfServiceResetCredits(v)
+	}
+	if _, ok := _c.mutation.SelfServiceResetGranted(); !ok {
+		v := userplatformquota.DefaultSelfServiceResetGranted
+		_c.mutation.SetSelfServiceResetGranted(v)
+	}
 	return nil
 }
 
@@ -301,6 +337,17 @@ func (_c *UserPlatformQuotaCreate) check() error {
 	}
 	if _, ok := _c.mutation.MonthlyUsageUsd(); !ok {
 		return &ValidationError{Name: "monthly_usage_usd", err: errors.New(`ent: missing required field "UserPlatformQuota.monthly_usage_usd"`)}
+	}
+	if _, ok := _c.mutation.SelfServiceResetCredits(); !ok {
+		return &ValidationError{Name: "self_service_reset_credits", err: errors.New(`ent: missing required field "UserPlatformQuota.self_service_reset_credits"`)}
+	}
+	if v, ok := _c.mutation.SelfServiceResetCredits(); ok {
+		if err := userplatformquota.SelfServiceResetCreditsValidator(v); err != nil {
+			return &ValidationError{Name: "self_service_reset_credits", err: fmt.Errorf(`ent: validator failed for field "UserPlatformQuota.self_service_reset_credits": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.SelfServiceResetGranted(); !ok {
+		return &ValidationError{Name: "self_service_reset_granted", err: errors.New(`ent: missing required field "UserPlatformQuota.self_service_reset_granted"`)}
 	}
 	if len(_c.mutation.UserIDs()) == 0 {
 		return &ValidationError{Name: "user", err: errors.New(`ent: missing required edge "UserPlatformQuota.user"`)}
@@ -371,6 +418,14 @@ func (_c *UserPlatformQuotaCreate) createSpec() (*UserPlatformQuota, *sqlgraph.C
 	if value, ok := _c.mutation.MonthlyUsageUsd(); ok {
 		_spec.SetField(userplatformquota.FieldMonthlyUsageUsd, field.TypeFloat64, value)
 		_node.MonthlyUsageUsd = value
+	}
+	if value, ok := _c.mutation.SelfServiceResetCredits(); ok {
+		_spec.SetField(userplatformquota.FieldSelfServiceResetCredits, field.TypeInt, value)
+		_node.SelfServiceResetCredits = value
+	}
+	if value, ok := _c.mutation.SelfServiceResetGranted(); ok {
+		_spec.SetField(userplatformquota.FieldSelfServiceResetGranted, field.TypeBool, value)
+		_node.SelfServiceResetGranted = value
 	}
 	if value, ok := _c.mutation.DailyWindowStart(); ok {
 		_spec.SetField(userplatformquota.FieldDailyWindowStart, field.TypeTime, value)
@@ -630,6 +685,36 @@ func (u *UserPlatformQuotaUpsert) UpdateMonthlyUsageUsd() *UserPlatformQuotaUpse
 // AddMonthlyUsageUsd adds v to the "monthly_usage_usd" field.
 func (u *UserPlatformQuotaUpsert) AddMonthlyUsageUsd(v float64) *UserPlatformQuotaUpsert {
 	u.Add(userplatformquota.FieldMonthlyUsageUsd, v)
+	return u
+}
+
+// SetSelfServiceResetCredits sets the "self_service_reset_credits" field.
+func (u *UserPlatformQuotaUpsert) SetSelfServiceResetCredits(v int) *UserPlatformQuotaUpsert {
+	u.Set(userplatformquota.FieldSelfServiceResetCredits, v)
+	return u
+}
+
+// UpdateSelfServiceResetCredits sets the "self_service_reset_credits" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsert) UpdateSelfServiceResetCredits() *UserPlatformQuotaUpsert {
+	u.SetExcluded(userplatformquota.FieldSelfServiceResetCredits)
+	return u
+}
+
+// AddSelfServiceResetCredits adds v to the "self_service_reset_credits" field.
+func (u *UserPlatformQuotaUpsert) AddSelfServiceResetCredits(v int) *UserPlatformQuotaUpsert {
+	u.Add(userplatformquota.FieldSelfServiceResetCredits, v)
+	return u
+}
+
+// SetSelfServiceResetGranted sets the "self_service_reset_granted" field.
+func (u *UserPlatformQuotaUpsert) SetSelfServiceResetGranted(v bool) *UserPlatformQuotaUpsert {
+	u.Set(userplatformquota.FieldSelfServiceResetGranted, v)
+	return u
+}
+
+// UpdateSelfServiceResetGranted sets the "self_service_reset_granted" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsert) UpdateSelfServiceResetGranted() *UserPlatformQuotaUpsert {
+	u.SetExcluded(userplatformquota.FieldSelfServiceResetGranted)
 	return u
 }
 
@@ -939,6 +1024,41 @@ func (u *UserPlatformQuotaUpsertOne) AddMonthlyUsageUsd(v float64) *UserPlatform
 func (u *UserPlatformQuotaUpsertOne) UpdateMonthlyUsageUsd() *UserPlatformQuotaUpsertOne {
 	return u.Update(func(s *UserPlatformQuotaUpsert) {
 		s.UpdateMonthlyUsageUsd()
+	})
+}
+
+// SetSelfServiceResetCredits sets the "self_service_reset_credits" field.
+func (u *UserPlatformQuotaUpsertOne) SetSelfServiceResetCredits(v int) *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.SetSelfServiceResetCredits(v)
+	})
+}
+
+// AddSelfServiceResetCredits adds v to the "self_service_reset_credits" field.
+func (u *UserPlatformQuotaUpsertOne) AddSelfServiceResetCredits(v int) *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.AddSelfServiceResetCredits(v)
+	})
+}
+
+// UpdateSelfServiceResetCredits sets the "self_service_reset_credits" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsertOne) UpdateSelfServiceResetCredits() *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.UpdateSelfServiceResetCredits()
+	})
+}
+
+// SetSelfServiceResetGranted sets the "self_service_reset_granted" field.
+func (u *UserPlatformQuotaUpsertOne) SetSelfServiceResetGranted(v bool) *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.SetSelfServiceResetGranted(v)
+	})
+}
+
+// UpdateSelfServiceResetGranted sets the "self_service_reset_granted" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsertOne) UpdateSelfServiceResetGranted() *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.UpdateSelfServiceResetGranted()
 	})
 }
 
@@ -1423,6 +1543,41 @@ func (u *UserPlatformQuotaUpsertBulk) AddMonthlyUsageUsd(v float64) *UserPlatfor
 func (u *UserPlatformQuotaUpsertBulk) UpdateMonthlyUsageUsd() *UserPlatformQuotaUpsertBulk {
 	return u.Update(func(s *UserPlatformQuotaUpsert) {
 		s.UpdateMonthlyUsageUsd()
+	})
+}
+
+// SetSelfServiceResetCredits sets the "self_service_reset_credits" field.
+func (u *UserPlatformQuotaUpsertBulk) SetSelfServiceResetCredits(v int) *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.SetSelfServiceResetCredits(v)
+	})
+}
+
+// AddSelfServiceResetCredits adds v to the "self_service_reset_credits" field.
+func (u *UserPlatformQuotaUpsertBulk) AddSelfServiceResetCredits(v int) *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.AddSelfServiceResetCredits(v)
+	})
+}
+
+// UpdateSelfServiceResetCredits sets the "self_service_reset_credits" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsertBulk) UpdateSelfServiceResetCredits() *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.UpdateSelfServiceResetCredits()
+	})
+}
+
+// SetSelfServiceResetGranted sets the "self_service_reset_granted" field.
+func (u *UserPlatformQuotaUpsertBulk) SetSelfServiceResetGranted(v bool) *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.SetSelfServiceResetGranted(v)
+	})
+}
+
+// UpdateSelfServiceResetGranted sets the "self_service_reset_granted" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsertBulk) UpdateSelfServiceResetGranted() *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.UpdateSelfServiceResetGranted()
 	})
 }
 

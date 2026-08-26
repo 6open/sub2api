@@ -37,6 +37,10 @@ const (
 	FieldWeeklyUsageUsd = "weekly_usage_usd"
 	// FieldMonthlyUsageUsd holds the string denoting the monthly_usage_usd field in the database.
 	FieldMonthlyUsageUsd = "monthly_usage_usd"
+	// FieldSelfServiceResetCredits holds the string denoting the self_service_reset_credits field in the database.
+	FieldSelfServiceResetCredits = "self_service_reset_credits"
+	// FieldSelfServiceResetGranted holds the string denoting the self_service_reset_granted field in the database.
+	FieldSelfServiceResetGranted = "self_service_reset_granted"
 	// FieldDailyWindowStart holds the string denoting the daily_window_start field in the database.
 	FieldDailyWindowStart = "daily_window_start"
 	// FieldWeeklyWindowStart holds the string denoting the weekly_window_start field in the database.
@@ -70,6 +74,8 @@ var Columns = []string{
 	FieldDailyUsageUsd,
 	FieldWeeklyUsageUsd,
 	FieldMonthlyUsageUsd,
+	FieldSelfServiceResetCredits,
+	FieldSelfServiceResetGranted,
 	FieldDailyWindowStart,
 	FieldWeeklyWindowStart,
 	FieldMonthlyWindowStart,
@@ -107,6 +113,12 @@ var (
 	DefaultWeeklyUsageUsd float64
 	// DefaultMonthlyUsageUsd holds the default value on creation for the "monthly_usage_usd" field.
 	DefaultMonthlyUsageUsd float64
+	// DefaultSelfServiceResetCredits holds the default value on creation for the "self_service_reset_credits" field.
+	DefaultSelfServiceResetCredits int
+	// SelfServiceResetCreditsValidator is a validator for the "self_service_reset_credits" field. It is called by the builders before save.
+	SelfServiceResetCreditsValidator func(int) error
+	// DefaultSelfServiceResetGranted holds the default value on creation for the "self_service_reset_granted" field.
+	DefaultSelfServiceResetGranted bool
 )
 
 // OrderOption defines the ordering options for the UserPlatformQuota queries.
@@ -170,6 +182,16 @@ func ByWeeklyUsageUsd(opts ...sql.OrderTermOption) OrderOption {
 // ByMonthlyUsageUsd orders the results by the monthly_usage_usd field.
 func ByMonthlyUsageUsd(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMonthlyUsageUsd, opts...).ToFunc()
+}
+
+// BySelfServiceResetCredits orders the results by the self_service_reset_credits field.
+func BySelfServiceResetCredits(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSelfServiceResetCredits, opts...).ToFunc()
+}
+
+// BySelfServiceResetGranted orders the results by the self_service_reset_granted field.
+func BySelfServiceResetGranted(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSelfServiceResetGranted, opts...).ToFunc()
 }
 
 // ByDailyWindowStart orders the results by the daily_window_start field.

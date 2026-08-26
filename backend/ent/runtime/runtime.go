@@ -2425,6 +2425,16 @@ func init() {
 	userplatformquotaDescMonthlyUsageUsd := userplatformquotaFields[7].Descriptor()
 	// userplatformquota.DefaultMonthlyUsageUsd holds the default value on creation for the monthly_usage_usd field.
 	userplatformquota.DefaultMonthlyUsageUsd = userplatformquotaDescMonthlyUsageUsd.Default.(float64)
+	// userplatformquotaDescSelfServiceResetCredits is the schema descriptor for self_service_reset_credits field.
+	userplatformquotaDescSelfServiceResetCredits := userplatformquotaFields[8].Descriptor()
+	// userplatformquota.DefaultSelfServiceResetCredits holds the default value on creation for the self_service_reset_credits field.
+	userplatformquota.DefaultSelfServiceResetCredits = userplatformquotaDescSelfServiceResetCredits.Default.(int)
+	// userplatformquota.SelfServiceResetCreditsValidator is a validator for the "self_service_reset_credits" field. It is called by the builders before save.
+	userplatformquota.SelfServiceResetCreditsValidator = userplatformquotaDescSelfServiceResetCredits.Validators[0].(func(int) error)
+	// userplatformquotaDescSelfServiceResetGranted is the schema descriptor for self_service_reset_granted field.
+	userplatformquotaDescSelfServiceResetGranted := userplatformquotaFields[9].Descriptor()
+	// userplatformquota.DefaultSelfServiceResetGranted holds the default value on creation for the self_service_reset_granted field.
+	userplatformquota.DefaultSelfServiceResetGranted = userplatformquotaDescSelfServiceResetGranted.Default.(bool)
 	usersubscriptionMixin := schema.UserSubscription{}.Mixin()
 	usersubscriptionMixinHooks1 := usersubscriptionMixin[1].Hooks()
 	usersubscription.Hooks[0] = usersubscriptionMixinHooks1[0]

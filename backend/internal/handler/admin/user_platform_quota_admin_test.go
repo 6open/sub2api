@@ -74,6 +74,9 @@ func (r *upsertCapturingQuotaRepo) ResetExpiredWindow(_ context.Context, userID 
 	}
 	return r.resetErr
 }
+func (r *upsertCapturingQuotaRepo) ConsumeSelfServiceWeeklyReset(_ context.Context, _ int64, _ string, _ time.Time) error {
+	return nil
+}
 
 // billingCacheStub 实现 service.BillingCache 中本测试关心的 Delete 方法；其他方法 panic。
 type billingCacheStub struct {

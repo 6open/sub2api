@@ -88,6 +88,9 @@ func (f *fakeQuotaRepo) UpsertForUser(_ context.Context, _ int64, _ []UserPlatfo
 func (f *fakeQuotaRepo) ResetExpiredWindow(_ context.Context, _ int64, _ string, _ string, _ time.Time) error {
 	return nil
 }
+func (f *fakeQuotaRepo) ConsumeSelfServiceWeeklyReset(_ context.Context, _ int64, _ string, _ time.Time) error {
+	return nil
+}
 
 func (f *fakeQuotaRepo) BatchSnapshotUsage(_ context.Context, _ []UserPlatformQuotaSnapshot, _ time.Time) error {
 	return nil

@@ -42,7 +42,7 @@ func (UserPlatformQuota) Fields() []ent.Field {
 				// 此处为 ent 构建期约束，需与 service.AllowedQuotaPlatforms 保持同步。
 				switch s {
 				case "anthropic", "openai", "gemini", "antigravity", "grok",
-					"kimi", "zhipu", "deepseek":
+					"kimi", "zhipu", "deepseek", "openai_advanced":
 					return nil
 				default:
 					return fmt.Errorf("platform %q is not allowed", s)
@@ -76,6 +76,14 @@ func (UserPlatformQuota) Fields() []ent.Field {
 		field.Float("monthly_usage_usd").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
+
+		// 用户自助重置次数。当前仅 openai_advanced 使用，其他平台保持 0。
+		field.Int("self_service_reset_credits").
+			Default(0).
+			NonNegative(),
+		// 标记初始重置卡已经发放，防止迁移重跑或默认快照重复发卡。
+		field.Bool("self_service_reset_granted").
+			Default(false),
 
 		// 窗口起点（NULL = 首次还未初始化，由 InitWindowStarts 用 COALESCE 兜底）
 		field.Time("daily_window_start").

@@ -341,6 +341,7 @@ export interface PlatformQuotaItem {
   daily_usage_usd: number
   weekly_usage_usd: number
   monthly_usage_usd: number
+  self_service_reset_credits: number
   daily_window_start?: string | null
   weekly_window_start?: string | null
   monthly_window_start?: string | null

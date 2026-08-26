@@ -114,6 +114,9 @@ func (s *userPlatformQuotaRepoStub) UpsertForUser(context.Context, int64, []User
 func (s *userPlatformQuotaRepoStub) ResetExpiredWindow(context.Context, int64, string, string, time.Time) error {
 	panic("unexpected ResetExpiredWindow call")
 }
+func (s *userPlatformQuotaRepoStub) ConsumeSelfServiceWeeklyReset(context.Context, int64, string, time.Time) error {
+	panic("unexpected ConsumeSelfServiceWeeklyReset call")
+}
 
 func (s *userPlatformQuotaRepoStub) BatchSnapshotUsage(_ context.Context, _ []UserPlatformQuotaSnapshot, _ time.Time) error {
 	return nil

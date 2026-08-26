@@ -379,8 +379,13 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
+function handleAdvancedQuotaUpdated() {
+  void loadAdvancedQuota()
+}
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+  window.addEventListener('advanced-quota-updated', handleAdvancedQuotaUpdated)
 })
 
 watch(() => user.value?.id, () => {
@@ -389,6 +394,7 @@ watch(() => user.value?.id, () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('advanced-quota-updated', handleAdvancedQuotaUpdated)
 })
 </script>
 

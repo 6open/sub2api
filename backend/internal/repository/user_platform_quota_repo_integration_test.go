@@ -265,6 +265,36 @@ func TestUserPlatformQuotaRepository_ResetExpiredWindow(t *testing.T) {
 	require.InDelta(t, 50.0, rec.MonthlyUsageUSD, 1e-9, "monthly usage unchanged")
 }
 
+func TestUserPlatformQuotaRepository_ConsumeSelfServiceWeeklyReset_OnlyOnce(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	userID := mustCreateUserForQuota(t, client)
+	weekStart := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
+
+	_, err := client.UserPlatformQuota.Create().
+		SetUserID(userID).
+		SetPlatform(service.PlatformOpenAIAdvanced).
+		SetWeeklyLimitUsd(50).
+		SetWeeklyUsageUsd(12.5).
+		SetWeeklyWindowStart(weekStart).
+		SetSelfServiceResetCredits(1).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	repo := NewUserPlatformQuotaRepository(client)
+	require.NoError(t, repo.ConsumeSelfServiceWeeklyReset(txCtx, userID, service.PlatformOpenAIAdvanced, weekStart))
+
+	record, err := repo.GetByUserPlatform(txCtx, userID, service.PlatformOpenAIAdvanced)
+	require.NoError(t, err)
+	require.Zero(t, record.WeeklyUsageUSD)
+	require.Zero(t, record.SelfServiceResetCredits)
+
+	err = repo.ConsumeSelfServiceWeeklyReset(txCtx, userID, service.PlatformOpenAIAdvanced, weekStart)
+	require.ErrorIs(t, err, ErrSelfServiceQuotaResetUnavailable)
+}
+
 func TestUserPlatformQuotaRepository_ResetExpiredWindow_UnknownWindow(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

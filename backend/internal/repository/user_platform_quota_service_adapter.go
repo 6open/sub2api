@@ -48,17 +48,18 @@ func (a *userPlatformQuotaServiceAdapter) ListByUser(ctx context.Context, userID
 	out := make([]service.UserPlatformQuotaRecord, len(rows))
 	for i, r := range rows {
 		out[i] = service.UserPlatformQuotaRecord{
-			UserID:             r.UserID,
-			Platform:           r.Platform,
-			DailyLimitUSD:      r.DailyLimitUSD,
-			WeeklyLimitUSD:     r.WeeklyLimitUSD,
-			MonthlyLimitUSD:    r.MonthlyLimitUSD,
-			DailyUsageUSD:      r.DailyUsageUSD,
-			WeeklyUsageUSD:     r.WeeklyUsageUSD,
-			MonthlyUsageUSD:    r.MonthlyUsageUSD,
-			DailyWindowStart:   r.DailyWindowStart,
-			WeeklyWindowStart:  r.WeeklyWindowStart,
-			MonthlyWindowStart: r.MonthlyWindowStart,
+			UserID:                  r.UserID,
+			Platform:                r.Platform,
+			DailyLimitUSD:           r.DailyLimitUSD,
+			WeeklyLimitUSD:          r.WeeklyLimitUSD,
+			MonthlyLimitUSD:         r.MonthlyLimitUSD,
+			DailyUsageUSD:           r.DailyUsageUSD,
+			WeeklyUsageUSD:          r.WeeklyUsageUSD,
+			MonthlyUsageUSD:         r.MonthlyUsageUSD,
+			SelfServiceResetCredits: r.SelfServiceResetCredits,
+			DailyWindowStart:        r.DailyWindowStart,
+			WeeklyWindowStart:       r.WeeklyWindowStart,
+			MonthlyWindowStart:      r.MonthlyWindowStart,
 		}
 	}
 	return out, nil
@@ -69,11 +70,12 @@ func (a *userPlatformQuotaServiceAdapter) BulkInsertInitial(ctx context.Context,
 	repoRecords := make([]UserPlatformQuotaRecord, len(records))
 	for i, r := range records {
 		repoRecords[i] = UserPlatformQuotaRecord{
-			UserID:          r.UserID,
-			Platform:        r.Platform,
-			DailyLimitUSD:   r.DailyLimitUSD,
-			WeeklyLimitUSD:  r.WeeklyLimitUSD,
-			MonthlyLimitUSD: r.MonthlyLimitUSD,
+			UserID:                  r.UserID,
+			Platform:                r.Platform,
+			DailyLimitUSD:           r.DailyLimitUSD,
+			WeeklyLimitUSD:          r.WeeklyLimitUSD,
+			MonthlyLimitUSD:         r.MonthlyLimitUSD,
+			SelfServiceResetCredits: r.SelfServiceResetCredits,
 		}
 	}
 	return a.inner.BulkInsertInitial(ctx, repoRecords)
@@ -90,6 +92,14 @@ func (a *userPlatformQuotaServiceAdapter) ResetExpiredWindow(ctx context.Context
 	err := a.inner.ResetExpiredWindow(ctx, userID, platform, window, newStart)
 	if errors.Is(err, ErrUserPlatformQuotaNotFound) {
 		return fmt.Errorf("%w: %w", service.ErrUserPlatformQuotaNotFound, err)
+	}
+	return err
+}
+
+func (a *userPlatformQuotaServiceAdapter) ConsumeSelfServiceWeeklyReset(ctx context.Context, userID int64, platform string, currentWeekStart time.Time) error {
+	err := a.inner.ConsumeSelfServiceWeeklyReset(ctx, userID, platform, currentWeekStart)
+	if errors.Is(err, ErrSelfServiceQuotaResetUnavailable) {
+		return fmt.Errorf("%w: %w", service.ErrSelfServiceQuotaResetUnavailable, err)
 	}
 	return err
 }
@@ -144,17 +154,18 @@ func (a *genericUserPlatformQuotaAdapter) ListByUser(ctx context.Context, userID
 	out := make([]service.UserPlatformQuotaRecord, len(rows))
 	for i, r := range rows {
 		out[i] = service.UserPlatformQuotaRecord{
-			UserID:             r.UserID,
-			Platform:           r.Platform,
-			DailyLimitUSD:      r.DailyLimitUSD,
-			WeeklyLimitUSD:     r.WeeklyLimitUSD,
-			MonthlyLimitUSD:    r.MonthlyLimitUSD,
-			DailyUsageUSD:      r.DailyUsageUSD,
-			WeeklyUsageUSD:     r.WeeklyUsageUSD,
-			MonthlyUsageUSD:    r.MonthlyUsageUSD,
-			DailyWindowStart:   r.DailyWindowStart,
-			WeeklyWindowStart:  r.WeeklyWindowStart,
-			MonthlyWindowStart: r.MonthlyWindowStart,
+			UserID:                  r.UserID,
+			Platform:                r.Platform,
+			DailyLimitUSD:           r.DailyLimitUSD,
+			WeeklyLimitUSD:          r.WeeklyLimitUSD,
+			MonthlyLimitUSD:         r.MonthlyLimitUSD,
+			DailyUsageUSD:           r.DailyUsageUSD,
+			WeeklyUsageUSD:          r.WeeklyUsageUSD,
+			MonthlyUsageUSD:         r.MonthlyUsageUSD,
+			SelfServiceResetCredits: r.SelfServiceResetCredits,
+			DailyWindowStart:        r.DailyWindowStart,
+			WeeklyWindowStart:       r.WeeklyWindowStart,
+			MonthlyWindowStart:      r.MonthlyWindowStart,
 		}
 	}
 	return out, nil
@@ -165,11 +176,12 @@ func (a *genericUserPlatformQuotaAdapter) BulkInsertInitial(ctx context.Context,
 	repoRecords := make([]UserPlatformQuotaRecord, len(records))
 	for i, r := range records {
 		repoRecords[i] = UserPlatformQuotaRecord{
-			UserID:          r.UserID,
-			Platform:        r.Platform,
-			DailyLimitUSD:   r.DailyLimitUSD,
-			WeeklyLimitUSD:  r.WeeklyLimitUSD,
-			MonthlyLimitUSD: r.MonthlyLimitUSD,
+			UserID:                  r.UserID,
+			Platform:                r.Platform,
+			DailyLimitUSD:           r.DailyLimitUSD,
+			WeeklyLimitUSD:          r.WeeklyLimitUSD,
+			MonthlyLimitUSD:         r.MonthlyLimitUSD,
+			SelfServiceResetCredits: r.SelfServiceResetCredits,
 		}
 	}
 	return a.inner.BulkInsertInitial(ctx, repoRecords)
@@ -186,6 +198,14 @@ func (a *genericUserPlatformQuotaAdapter) ResetExpiredWindow(ctx context.Context
 	err := a.inner.ResetExpiredWindow(ctx, userID, platform, window, newStart)
 	if errors.Is(err, ErrUserPlatformQuotaNotFound) {
 		return fmt.Errorf("%w: %w", service.ErrUserPlatformQuotaNotFound, err)
+	}
+	return err
+}
+
+func (a *genericUserPlatformQuotaAdapter) ConsumeSelfServiceWeeklyReset(ctx context.Context, userID int64, platform string, currentWeekStart time.Time) error {
+	err := a.inner.ConsumeSelfServiceWeeklyReset(ctx, userID, platform, currentWeekStart)
+	if errors.Is(err, ErrSelfServiceQuotaResetUnavailable) {
+		return fmt.Errorf("%w: %w", service.ErrSelfServiceQuotaResetUnavailable, err)
 	}
 	return err
 }
@@ -216,17 +236,18 @@ func (a *genericUserPlatformQuotaAdapter) BatchSnapshotUsage(ctx context.Context
 // toServiceRecord 将 repository.UserPlatformQuotaRecord 转换为 service.UserPlatformQuotaRecord。
 func toServiceRecord(rec *UserPlatformQuotaRecord) *service.UserPlatformQuotaRecord {
 	return &service.UserPlatformQuotaRecord{
-		UserID:             rec.UserID,
-		Platform:           rec.Platform,
-		DailyLimitUSD:      rec.DailyLimitUSD,
-		WeeklyLimitUSD:     rec.WeeklyLimitUSD,
-		MonthlyLimitUSD:    rec.MonthlyLimitUSD,
-		DailyUsageUSD:      rec.DailyUsageUSD,
-		WeeklyUsageUSD:     rec.WeeklyUsageUSD,
-		MonthlyUsageUSD:    rec.MonthlyUsageUSD,
-		DailyWindowStart:   rec.DailyWindowStart,
-		WeeklyWindowStart:  rec.WeeklyWindowStart,
-		MonthlyWindowStart: rec.MonthlyWindowStart,
+		UserID:                  rec.UserID,
+		Platform:                rec.Platform,
+		DailyLimitUSD:           rec.DailyLimitUSD,
+		WeeklyLimitUSD:          rec.WeeklyLimitUSD,
+		MonthlyLimitUSD:         rec.MonthlyLimitUSD,
+		DailyUsageUSD:           rec.DailyUsageUSD,
+		WeeklyUsageUSD:          rec.WeeklyUsageUSD,
+		MonthlyUsageUSD:         rec.MonthlyUsageUSD,
+		SelfServiceResetCredits: rec.SelfServiceResetCredits,
+		DailyWindowStart:        rec.DailyWindowStart,
+		WeeklyWindowStart:       rec.WeeklyWindowStart,
+		MonthlyWindowStart:      rec.MonthlyWindowStart,
 	}
 }
 
@@ -235,17 +256,18 @@ func toRepoRecords(records []service.UserPlatformQuotaRecord) []UserPlatformQuot
 	out := make([]UserPlatformQuotaRecord, len(records))
 	for i, r := range records {
 		out[i] = UserPlatformQuotaRecord{
-			UserID:             r.UserID,
-			Platform:           r.Platform,
-			DailyLimitUSD:      r.DailyLimitUSD,
-			WeeklyLimitUSD:     r.WeeklyLimitUSD,
-			MonthlyLimitUSD:    r.MonthlyLimitUSD,
-			DailyUsageUSD:      r.DailyUsageUSD,
-			WeeklyUsageUSD:     r.WeeklyUsageUSD,
-			MonthlyUsageUSD:    r.MonthlyUsageUSD,
-			DailyWindowStart:   r.DailyWindowStart,
-			WeeklyWindowStart:  r.WeeklyWindowStart,
-			MonthlyWindowStart: r.MonthlyWindowStart,
+			UserID:                  r.UserID,
+			Platform:                r.Platform,
+			DailyLimitUSD:           r.DailyLimitUSD,
+			WeeklyLimitUSD:          r.WeeklyLimitUSD,
+			MonthlyLimitUSD:         r.MonthlyLimitUSD,
+			DailyUsageUSD:           r.DailyUsageUSD,
+			WeeklyUsageUSD:          r.WeeklyUsageUSD,
+			MonthlyUsageUSD:         r.MonthlyUsageUSD,
+			SelfServiceResetCredits: r.SelfServiceResetCredits,
+			DailyWindowStart:        r.DailyWindowStart,
+			WeeklyWindowStart:       r.WeeklyWindowStart,
+			MonthlyWindowStart:      r.MonthlyWindowStart,
 		}
 	}
 	return out

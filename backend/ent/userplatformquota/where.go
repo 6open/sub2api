@@ -110,6 +110,16 @@ func MonthlyUsageUsd(v float64) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldEQ(FieldMonthlyUsageUsd, v))
 }
 
+// SelfServiceResetCredits applies equality check predicate on the "self_service_reset_credits" field. It's identical to SelfServiceResetCreditsEQ.
+func SelfServiceResetCredits(v int) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldEQ(FieldSelfServiceResetCredits, v))
+}
+
+// SelfServiceResetGranted applies equality check predicate on the "self_service_reset_granted" field. It's identical to SelfServiceResetGrantedEQ.
+func SelfServiceResetGranted(v bool) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldEQ(FieldSelfServiceResetGranted, v))
+}
+
 // DailyWindowStart applies equality check predicate on the "daily_window_start" field. It's identical to DailyWindowStartEQ.
 func DailyWindowStart(v time.Time) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldEQ(FieldDailyWindowStart, v))
@@ -608,6 +618,56 @@ func MonthlyUsageUsdLT(v float64) predicate.UserPlatformQuota {
 // MonthlyUsageUsdLTE applies the LTE predicate on the "monthly_usage_usd" field.
 func MonthlyUsageUsdLTE(v float64) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldLTE(FieldMonthlyUsageUsd, v))
+}
+
+// SelfServiceResetCreditsEQ applies the EQ predicate on the "self_service_reset_credits" field.
+func SelfServiceResetCreditsEQ(v int) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldEQ(FieldSelfServiceResetCredits, v))
+}
+
+// SelfServiceResetCreditsNEQ applies the NEQ predicate on the "self_service_reset_credits" field.
+func SelfServiceResetCreditsNEQ(v int) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldNEQ(FieldSelfServiceResetCredits, v))
+}
+
+// SelfServiceResetCreditsIn applies the In predicate on the "self_service_reset_credits" field.
+func SelfServiceResetCreditsIn(vs ...int) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldIn(FieldSelfServiceResetCredits, vs...))
+}
+
+// SelfServiceResetCreditsNotIn applies the NotIn predicate on the "self_service_reset_credits" field.
+func SelfServiceResetCreditsNotIn(vs ...int) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldNotIn(FieldSelfServiceResetCredits, vs...))
+}
+
+// SelfServiceResetCreditsGT applies the GT predicate on the "self_service_reset_credits" field.
+func SelfServiceResetCreditsGT(v int) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldGT(FieldSelfServiceResetCredits, v))
+}
+
+// SelfServiceResetCreditsGTE applies the GTE predicate on the "self_service_reset_credits" field.
+func SelfServiceResetCreditsGTE(v int) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldGTE(FieldSelfServiceResetCredits, v))
+}
+
+// SelfServiceResetCreditsLT applies the LT predicate on the "self_service_reset_credits" field.
+func SelfServiceResetCreditsLT(v int) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldLT(FieldSelfServiceResetCredits, v))
+}
+
+// SelfServiceResetCreditsLTE applies the LTE predicate on the "self_service_reset_credits" field.
+func SelfServiceResetCreditsLTE(v int) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldLTE(FieldSelfServiceResetCredits, v))
+}
+
+// SelfServiceResetGrantedEQ applies the EQ predicate on the "self_service_reset_granted" field.
+func SelfServiceResetGrantedEQ(v bool) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldEQ(FieldSelfServiceResetGranted, v))
+}
+
+// SelfServiceResetGrantedNEQ applies the NEQ predicate on the "self_service_reset_granted" field.
+func SelfServiceResetGrantedNEQ(v bool) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldNEQ(FieldSelfServiceResetGranted, v))
 }
 
 // DailyWindowStartEQ applies the EQ predicate on the "daily_window_start" field.

@@ -46,6 +46,9 @@ func (f *fakeInsertRecorder) UpsertForUser(_ context.Context, _ int64, _ []UserP
 func (f *fakeInsertRecorder) ResetExpiredWindow(_ context.Context, _ int64, _ string, _ string, _ time.Time) error {
 	return nil
 }
+func (f *fakeInsertRecorder) ConsumeSelfServiceWeeklyReset(_ context.Context, _ int64, _ string, _ time.Time) error {
+	return nil
+}
 
 func (f *fakeInsertRecorder) BatchSnapshotUsage(_ context.Context, _ []UserPlatformQuotaSnapshot, _ time.Time) error {
 	return nil
