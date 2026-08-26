@@ -44,7 +44,9 @@ func TestRewriteOpenAIReasoningEffort(t *testing.T) {
 func TestOpenAIAdvancedQuotaUsageCost(t *testing.T) {
 	cfg := advancedQuotaTestConfig()
 	user := &User{ID: 1, Role: RoleUser}
-	require.Equal(t, 1.25, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "high", 1.25))
-	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "medium", 1.25))
-	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-luna", "max", 1.25))
+	cost := &CostBreakdown{TotalCost: 1.25, ActualCost: 0.25}
+	require.Equal(t, 0.25, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "high", cost))
+	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "medium", cost))
+	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-luna", "max", cost))
+	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "high", nil))
 }

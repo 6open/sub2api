@@ -441,7 +441,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 	advancedQuotaCost := 0.0
 	if usageLog.ReasoningEffort != nil {
-		advancedQuotaCost = OpenAIAdvancedQuotaUsageCost(s.cfg, user, quotaPlatform, usageLog.Model, *usageLog.ReasoningEffort, cost.TotalCost)
+		advancedQuotaCost = OpenAIAdvancedQuotaUsageCost(s.cfg, user, quotaPlatform, usageLog.Model, *usageLog.ReasoningEffort, cost)
 	}
 
 	billingErr := func() error {

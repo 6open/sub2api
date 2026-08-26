@@ -82,7 +82,7 @@ type postUsageBillingParams struct {
 	AccountRateMultiplier float64
 	APIKeyService         APIKeyQuotaUpdater
 	Platform              string  // 来自 APIKey 关联 Group 的平台标识
-	AdvancedQuotaCost     float64 // 独立高级推理额度，按倍率前标准费用累计
+	AdvancedQuotaCost     float64 // 独立高级推理额度，按用户折后费用累计
 }
 
 // PlatformFromAPIKey 从 APIKey 关联的 Group 推导 platform 名称。
