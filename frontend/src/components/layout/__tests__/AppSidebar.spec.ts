@@ -64,6 +64,29 @@ describe('AppSidebar order navigation', () => {
   })
 })
 
+describe('AppSidebar payment navigation', () => {
+  it.each([
+    '/subscriptions',
+    '/purchase',
+    '/orders',
+    '/redeem',
+  ])('guards the user entry %s with the public payment flag', (path) => {
+    expect(componentSource).toMatch(
+      new RegExp(`path: '${path.replace('/', '\\/')}'[^\\n]+featureFlag: flagPayment`),
+    )
+  })
+
+  it.each([
+    '/admin/subscriptions',
+    '/admin/redeem',
+    '/admin/promo-codes',
+  ])('guards the admin entry %s with the admin payment flag', (path) => {
+    expect(componentSource).toMatch(
+      new RegExp(`path: '${path.replaceAll('/', '\\/')}'[^\\n]+featureFlag: flagAdminPayment`),
+    )
+  })
+})
+
 describe('AppSidebar Open WebUI SSO entry', () => {
   it('starts a server-issued handoff instead of exposing a key or access token', () => {
     expect(componentSource).toContain('id="sidebar-open-webui"')

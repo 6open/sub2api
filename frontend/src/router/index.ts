@@ -249,7 +249,8 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: false,
       title: 'Redeem Code',
       titleKey: 'redeem.title',
-      descriptionKey: 'redeem.description'
+      descriptionKey: 'redeem.description',
+      requiresPayment: true
     }
   },
   {
@@ -297,7 +298,8 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: false,
       title: 'My Subscriptions',
       titleKey: 'userSubscriptions.title',
-      descriptionKey: 'userSubscriptions.description'
+      descriptionKey: 'userSubscriptions.description',
+      requiresPayment: true
     }
   },
   {
@@ -309,7 +311,8 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: false,
       title: 'Purchase Subscription',
       titleKey: 'nav.buySubscription',
-      requiresPayment: false
+      descriptionKey: 'purchase.description',
+      requiresPayment: true
     }
   },
   {
@@ -508,7 +511,8 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: true,
       title: 'Subscription Management',
       titleKey: 'admin.subscriptions.title',
-      descriptionKey: 'admin.subscriptions.description'
+      descriptionKey: 'admin.subscriptions.description',
+      requiresPayment: true
     }
   },
   {
@@ -556,7 +560,8 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: true,
       title: 'Redeem Code Management',
       titleKey: 'admin.redeem.title',
-      descriptionKey: 'admin.redeem.description'
+      descriptionKey: 'admin.redeem.description',
+      requiresPayment: true
     }
   },
   {
@@ -580,7 +585,8 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: true,
       title: 'Promo Code Management',
       titleKey: 'admin.promo.title',
-      descriptionKey: 'admin.promo.description'
+      descriptionKey: 'admin.promo.description',
+      requiresPayment: true
     }
   },
   {

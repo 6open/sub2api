@@ -53,16 +53,13 @@ describe('PaymentView static purchase entries', () => {
     expect(source).toContain('>加入</a>')
   })
 
-  it('keeps the purchase page usable when built-in payment checkout is disabled', () => {
-    const view = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
+  it('hides and protects the purchase page when payment is disabled', () => {
     const router = readFileSync(resolve(__dirname, '../../../router/index.ts'), 'utf8')
     const sidebar = readFileSync(resolve(__dirname, '../../../components/layout/AppSidebar.vue'), 'utf8')
+    const purchaseRoute = router.match(/path: '\/purchase',[\s\S]*?\n {2}\},/)
 
-    expect(router).toContain("path: '/purchase'")
-    expect(router).toContain('requiresPayment: false')
-    expect(router).not.toContain("descriptionKey: 'purchase.description'")
-    expect(sidebar).toContain("{ path: '/purchase', label: t('nav.buySubscription')")
-    expect(sidebar).not.toContain("{ path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment }")
-    expect(view).toContain('Keep this page usable even when the built-in payment system is disabled')
+    expect(purchaseRoute).not.toBeNull()
+    expect(purchaseRoute?.[0]).toContain('requiresPayment: true')
+    expect(sidebar).toContain("{ path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment }")
   })
 })

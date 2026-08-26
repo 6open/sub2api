@@ -1271,8 +1271,7 @@ onMounted(async () => {
       }
     }
   } catch (err: unknown) {
-    // Keep this page usable even when the built-in payment system is disabled;
-    // the Xianyu quota purchase entry is static and does not depend on checkout APIs.
+    // Keep the view stable if checkout data fails after an allowed navigation.
     checkout.value = {
       methods: {}, global_min: 0, global_max: 0,
 	      plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '', balance_packages: [],
