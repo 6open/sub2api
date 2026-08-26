@@ -229,6 +229,39 @@ func TestUserPlatformQuotaRepository_IncrementUsageWithReset_WeeklyReset(t *test
 	require.InDelta(t, 7.0, rec.MonthlyUsageUSD, 1e-9, "monthly accumulates (same month)")
 }
 
+func TestUserPlatformQuotaRepository_IncrementUsageWithReset_RefillsAdvancedResetEachWeek(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	userID := mustCreateUserForQuota(t, client)
+	previousWeek := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	currentWeek := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
+
+	_, err := client.UserPlatformQuota.Create().
+		SetUserID(userID).
+		SetPlatform(service.PlatformOpenAIAdvanced).
+		SetWeeklyLimitUsd(50).
+		SetWeeklyUsageUsd(50).
+		SetWeeklyWindowStart(previousWeek).
+		SetSelfServiceResetCredits(0).
+		SetSelfServiceResetGranted(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	repo := NewUserPlatformQuotaRepository(client)
+	require.NoError(t, repo.IncrementUsageWithReset(ctx, userID, service.PlatformOpenAIAdvanced, 2.5, currentWeek.Add(10*time.Hour)))
+
+	record, err := repo.GetByUserPlatform(ctx, userID, service.PlatformOpenAIAdvanced)
+	require.NoError(t, err)
+	require.InDelta(t, 2.5, record.WeeklyUsageUSD, 1e-9)
+	require.Equal(t, 1, record.SelfServiceResetCredits, "new week should replenish one reset")
+
+	require.NoError(t, repo.ConsumeSelfServiceWeeklyReset(ctx, userID, service.PlatformOpenAIAdvanced, currentWeek))
+	require.NoError(t, repo.IncrementUsageWithReset(ctx, userID, service.PlatformOpenAIAdvanced, 1.0, currentWeek.Add(11*time.Hour)))
+	record, err = repo.GetByUserPlatform(ctx, userID, service.PlatformOpenAIAdvanced)
+	require.NoError(t, err)
+	require.Zero(t, record.SelfServiceResetCredits, "same-week usage must not replenish a consumed reset")
+}
+
 func TestUserPlatformQuotaRepository_ResetExpiredWindow(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)
@@ -293,6 +326,37 @@ func TestUserPlatformQuotaRepository_ConsumeSelfServiceWeeklyReset_OnlyOnce(t *t
 
 	err = repo.ConsumeSelfServiceWeeklyReset(txCtx, userID, service.PlatformOpenAIAdvanced, weekStart)
 	require.ErrorIs(t, err, ErrSelfServiceQuotaResetUnavailable)
+}
+
+func TestUserPlatformQuotaRepository_ResetExpiredWindow_RefillsOnlyOnWeeklyRollover(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	userID := mustCreateUserForQuota(t, client)
+	previousWeek := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	currentWeek := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
+
+	_, err := client.UserPlatformQuota.Create().
+		SetUserID(userID).
+		SetPlatform(service.PlatformOpenAIAdvanced).
+		SetWeeklyUsageUsd(12).
+		SetWeeklyWindowStart(previousWeek).
+		SetSelfServiceResetCredits(0).
+		SetSelfServiceResetGranted(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	repo := NewUserPlatformQuotaRepository(client)
+	require.NoError(t, repo.ResetExpiredWindow(ctx, userID, service.PlatformOpenAIAdvanced, "weekly", currentWeek))
+	record, err := repo.GetByUserPlatform(ctx, userID, service.PlatformOpenAIAdvanced)
+	require.NoError(t, err)
+	require.Equal(t, 1, record.SelfServiceResetCredits, "advancing the weekly window should replenish one reset")
+
+	require.NoError(t, repo.IncrementUsageWithReset(ctx, userID, service.PlatformOpenAIAdvanced, 2, currentWeek.Add(time.Hour)))
+	require.NoError(t, repo.ConsumeSelfServiceWeeklyReset(ctx, userID, service.PlatformOpenAIAdvanced, currentWeek))
+	require.NoError(t, repo.ResetExpiredWindow(ctx, userID, service.PlatformOpenAIAdvanced, "weekly", currentWeek))
+	record, err = repo.GetByUserPlatform(ctx, userID, service.PlatformOpenAIAdvanced)
+	require.NoError(t, err)
+	require.Zero(t, record.SelfServiceResetCredits, "same-week admin reset must not replenish the reset")
 }
 
 func TestUserPlatformQuotaRepository_ResetExpiredWindow_UnknownWindow(t *testing.T) {
@@ -449,4 +513,48 @@ func TestBatchSnapshotUsage_InsertOverwriteMultiKey(t *testing.T) {
 	require.InDelta(t, 8.8, rec2After.DailyUsageUSD, 1e-9, "user2 daily must be overwritten to 8.8 (not accumulated)")
 	require.InDelta(t, 18.8, rec2After.WeeklyUsageUSD, 1e-9, "user2 weekly must be overwritten to 18.8")
 	require.InDelta(t, 28.8, rec2After.MonthlyUsageUSD, 1e-9, "user2 monthly must be overwritten to 28.8")
+}
+
+func TestBatchSnapshotUsage_RefillsAdvancedResetOnlyWhenWeekChanges(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	userID := mustCreateUserForQuota(t, client)
+	previousWeek := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	currentWeek := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
+	now := currentWeek.Add(10 * time.Hour)
+
+	_, err := client.UserPlatformQuota.Create().
+		SetUserID(userID).
+		SetPlatform(service.PlatformOpenAIAdvanced).
+		SetWeeklyLimitUsd(50).
+		SetWeeklyUsageUsd(50).
+		SetWeeklyWindowStart(previousWeek).
+		SetSelfServiceResetCredits(0).
+		SetSelfServiceResetGranted(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	repo := NewUserPlatformQuotaRepository(client)
+	snapshot := UserPlatformQuotaSnapshot{
+		UserID:             userID,
+		Platform:           service.PlatformOpenAIAdvanced,
+		DailyUsageUSD:      3,
+		WeeklyUsageUSD:     3,
+		MonthlyUsageUSD:    53,
+		DailyWindowStart:   currentWeek,
+		WeeklyWindowStart:  currentWeek,
+		MonthlyWindowStart: previousWeek,
+	}
+	require.NoError(t, repo.BatchSnapshotUsage(ctx, []UserPlatformQuotaSnapshot{snapshot}, now))
+
+	record, err := repo.GetByUserPlatform(ctx, userID, service.PlatformOpenAIAdvanced)
+	require.NoError(t, err)
+	require.Equal(t, 1, record.SelfServiceResetCredits, "new-week snapshot should replenish one reset")
+
+	require.NoError(t, repo.ConsumeSelfServiceWeeklyReset(ctx, userID, service.PlatformOpenAIAdvanced, currentWeek))
+	snapshot.WeeklyUsageUSD = 4
+	require.NoError(t, repo.BatchSnapshotUsage(ctx, []UserPlatformQuotaSnapshot{snapshot}, now.Add(time.Minute)))
+	record, err = repo.GetByUserPlatform(ctx, userID, service.PlatformOpenAIAdvanced)
+	require.NoError(t, err)
+	require.Zero(t, record.SelfServiceResetCredits, "same-week snapshot must not replenish a consumed reset")
 }

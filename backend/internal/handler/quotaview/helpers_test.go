@@ -80,6 +80,32 @@ func TestLazyZeroQuotaForResponse_MonthlyResetsAt_NotDrifting(t *testing.T) {
 	}
 }
 
+func TestLazyZeroQuotaForResponse_AdvancedResetRenewsWithExpiredWeek(t *testing.T) {
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	previousWeek := timezone.StartOfWeek(now).AddDate(0, 0, -7)
+	r := service.UserPlatformQuotaRecord{
+		Platform:                service.PlatformOpenAIAdvanced,
+		WeeklyUsageUSD:          50,
+		WeeklyWindowStart:       &previousWeek,
+		SelfServiceResetCredits: 0,
+	}
+
+	out := LazyZeroQuotaForResponse(r, now, false)
+	if got := out["self_service_reset_credits"]; got != 1 {
+		t.Fatalf("expired advanced week should expose one renewed reset, got %v", got)
+	}
+	if got := out["weekly_usage_usd"]; got != float64(0) {
+		t.Fatalf("expired advanced week should expose zero usage, got %v", got)
+	}
+
+	currentWeek := timezone.StartOfWeek(now)
+	r.WeeklyWindowStart = &currentWeek
+	out = LazyZeroQuotaForResponse(r, now, false)
+	if got := out["self_service_reset_credits"]; got != 0 {
+		t.Fatalf("active week must preserve a consumed reset, got %v", got)
+	}
+}
+
 // TestNeedsDailyReset_FollowsServerTimezone 验证日窗口过期判断按全局时区（北京 0 点）而非 UTC。
 func TestNeedsDailyReset_FollowsServerTimezone(t *testing.T) {
 	if err := timezone.Init("Asia/Shanghai"); err != nil {

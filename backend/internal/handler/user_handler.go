@@ -78,7 +78,7 @@ func (h *UserHandler) GetMyPlatformQuotas(c *gin.Context) {
 }
 
 // ResetMyOpenAIAdvancedQuota POST /user/platform-quotas/openai-advanced/reset
-// 消费用户唯一一次自助重置机会，并恢复本周完整高级额度。
+// 消费用户本周的自助重置机会，并恢复本周完整高级额度；机会随自然周刷新。
 func (h *UserHandler) ResetMyOpenAIAdvancedQuota(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {

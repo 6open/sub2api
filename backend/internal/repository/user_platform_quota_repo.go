@@ -64,7 +64,7 @@ type UserPlatformQuotaRepository interface {
 	IncrementUsageWithReset(ctx context.Context, userID int64, platform string, cost float64, now time.Time) error
 	// ResetExpiredWindow 重置指定窗口（daily/weekly/monthly）的用量与起始时间。
 	ResetExpiredWindow(ctx context.Context, userID int64, platform string, window string, newStart time.Time) error
-	// ConsumeSelfServiceWeeklyReset 原子扣减一次自助重置机会并清零当前周用量。
+	// ConsumeSelfServiceWeeklyReset 原子扣减本周一次自助重置机会并清零当前周用量。
 	ConsumeSelfServiceWeeklyReset(ctx context.Context, userID int64, platform string, currentWeekStart time.Time) error
 	// UpsertForUser 全量替换该用户所有平台限额配置（详见 service.UserPlatformQuotaRepository.UpsertForUser）。
 	UpsertForUser(ctx context.Context, userID int64, records []UserPlatformQuotaRecord) error
@@ -209,12 +209,23 @@ func (r *userPlatformQuotaRepository) IncrementUsageWithReset(ctx context.Contex
 			// 写法与本文件 insertLimitsRow / BulkInsertInitial 的 ON CONFLICT 一致。
 			const insertSQL = `INSERT INTO user_platform_quotas
 				(user_id, platform, daily_usage_usd, weekly_usage_usd, monthly_usage_usd,
-				 daily_window_start, weekly_window_start, monthly_window_start, created_at, updated_at)
-				VALUES ($1, $2, $3, $3, $3, $4, $5, $6, $7, $7)
+				 daily_window_start, weekly_window_start, monthly_window_start,
+				 self_service_reset_credits, self_service_reset_granted, created_at, updated_at)
+				VALUES ($1, $2, $3, $3, $3, $4, $5, $6,
+				 CASE WHEN $2::varchar = 'openai_advanced'::varchar THEN 1 ELSE 0 END,
+				 ($2::varchar = 'openai_advanced'::varchar), $7, $7)
 				ON CONFLICT (user_id, platform) WHERE deleted_at IS NULL DO UPDATE SET
 					daily_usage_usd   = user_platform_quotas.daily_usage_usd   + EXCLUDED.daily_usage_usd,
 					weekly_usage_usd  = user_platform_quotas.weekly_usage_usd  + EXCLUDED.weekly_usage_usd,
 					monthly_usage_usd = user_platform_quotas.monthly_usage_usd + EXCLUDED.monthly_usage_usd,
+					self_service_reset_credits = CASE
+						WHEN EXCLUDED.platform = 'openai_advanced'
+							AND user_platform_quotas.weekly_window_start IS DISTINCT FROM EXCLUDED.weekly_window_start
+						THEN 1
+						ELSE user_platform_quotas.self_service_reset_credits
+					END,
+					self_service_reset_granted = user_platform_quotas.self_service_reset_granted
+						OR EXCLUDED.self_service_reset_granted,
 					updated_at        = EXCLUDED.updated_at`
 			// $6 = now：30 天滚动月度窗口以当前时刻为起始
 			_, e := txClient.ExecContext(txCtx, insertSQL,
@@ -227,18 +238,23 @@ func (r *userPlatformQuotaRepository) IncrementUsageWithReset(ctx context.Contex
 		}
 
 		newDaily := maybeReset(existing.DailyUsageUsd, existing.DailyWindowStart, timezone.StartOfDay(now), cost)
-		newWeekly := maybeReset(existing.WeeklyUsageUsd, existing.WeeklyWindowStart, timezone.StartOfWeek(now), cost)
+		currentWeekStart := timezone.StartOfWeek(now)
+		weeklyRolledOver := existing.WeeklyWindowStart == nil || !existing.WeeklyWindowStart.Equal(currentWeekStart)
+		newWeekly := maybeReset(existing.WeeklyUsageUsd, existing.WeeklyWindowStart, currentWeekStart, cost)
 		// 30 天滚动月度窗口：过期时重置为 cost 并以 now 为新起始，否则累加保留原起始
 		newMonthly, newMonthlyStart := monthlyMaybeReset(existing.MonthlyUsageUsd, existing.MonthlyWindowStart, cost, now)
 
-		_, e := existing.Update().
+		update := existing.Update().
 			SetDailyUsageUsd(newDaily).
 			SetWeeklyUsageUsd(newWeekly).
 			SetMonthlyUsageUsd(newMonthly).
 			SetDailyWindowStart(timezone.StartOfDay(now)).
-			SetWeeklyWindowStart(timezone.StartOfWeek(now)).
-			SetMonthlyWindowStart(newMonthlyStart). // 30 天滚动：仅过期时更新起始
-			Save(txCtx)
+			SetWeeklyWindowStart(currentWeekStart).
+			SetMonthlyWindowStart(newMonthlyStart) // 30 天滚动：仅过期时更新起始
+		if platform == "openai_advanced" && weeklyRolledOver {
+			update = update.SetSelfServiceResetCredits(1).SetSelfServiceResetGranted(true)
+		}
+		_, e := update.Save(txCtx)
 		return e
 	})
 }
@@ -258,6 +274,34 @@ func (r *userPlatformQuotaRepository) IncrementUsageWithReset(ctx context.Contex
 // 未命中活跃记录时返回 ErrUserPlatformQuotaNotFound。
 func (r *userPlatformQuotaRepository) ResetExpiredWindow(ctx context.Context, userID int64, platform string, window string, newStart time.Time) error {
 	client := clientFromContext(ctx, r.client)
+	if window == "weekly" {
+		// 管理员在跨周后的首次操作也可能负责推进周窗口。只有窗口确实变化时
+		// 才补发本周机会；同一周内的强制重置不能额外发卡。
+		const query = `UPDATE user_platform_quotas
+			SET weekly_usage_usd = 0,
+			    self_service_reset_credits = CASE
+			        WHEN platform = 'openai_advanced'
+			             AND weekly_window_start IS DISTINCT FROM $3
+			        THEN 1
+			        ELSE self_service_reset_credits
+			    END,
+			    self_service_reset_granted = self_service_reset_granted OR platform = 'openai_advanced',
+			    weekly_window_start = $3,
+			    updated_at = NOW()
+			WHERE user_id = $1 AND platform = $2 AND deleted_at IS NULL`
+		result, err := client.ExecContext(ctx, query, userID, platform, newStart)
+		if err != nil {
+			return err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected == 0 {
+			return ErrUserPlatformQuotaNotFound
+		}
+		return nil
+	}
 	upd := client.UserPlatformQuota.Update().
 		Where(
 			userplatformquota.UserIDEQ(userID),
@@ -267,8 +311,6 @@ func (r *userPlatformQuotaRepository) ResetExpiredWindow(ctx context.Context, us
 	switch window {
 	case "daily":
 		upd = upd.SetDailyUsageUsd(0).SetDailyWindowStart(newStart)
-	case "weekly":
-		upd = upd.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(newStart)
 	case "monthly":
 		upd = upd.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(newStart)
 	default:
@@ -284,9 +326,9 @@ func (r *userPlatformQuotaRepository) ResetExpiredWindow(ctx context.Context, us
 	return nil
 }
 
-// ConsumeSelfServiceWeeklyReset 使用一张重置卡恢复当前周额度。
-// WHERE 同时约束当前周、本周已有消费和剩余次数，保证并发调用最多成功一次，
-// 也避免用户在自然周已过期或满额时误耗重置卡。
+// ConsumeSelfServiceWeeklyReset 使用本周的一张重置卡恢复当前周额度。
+// WHERE 同时约束当前周、本周已有消费和剩余次数，保证同一周并发调用最多成功一次，
+// 也避免用户在自然周已过期或满额时误耗机会。新自然周由用量累计/快照回写路径补发 1 次。
 func (r *userPlatformQuotaRepository) ConsumeSelfServiceWeeklyReset(ctx context.Context, userID int64, platform string, currentWeekStart time.Time) error {
 	client := clientFromContext(ctx, r.client)
 	const query = `UPDATE user_platform_quotas
@@ -513,7 +555,8 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 		_, _ = sb.WriteString(
 			"INSERT INTO user_platform_quotas" +
 				" (user_id, platform, daily_usage_usd, weekly_usage_usd, monthly_usage_usd," +
-				" daily_window_start, weekly_window_start, monthly_window_start, created_at, updated_at)" +
+				" daily_window_start, weekly_window_start, monthly_window_start," +
+				" self_service_reset_credits, self_service_reset_granted, created_at, updated_at)" +
 				" VALUES ")
 
 		// $1 = now（共用）；每行 8 个 per-row 参，从 $2 起连续编号。
@@ -523,8 +566,10 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 				_, _ = sb.WriteString(",")
 			}
 			b := len(args) // 当前 per-row 第一个参数的 0-based 索引，实际占位符 = b+1
-			fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$1,$1)",
-				b+1, b+2, b+3, b+4, b+5, b+6, b+7, b+8)
+			fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,"+
+				"CASE WHEN $%d::varchar = 'openai_advanced'::varchar THEN 1 ELSE 0 END,"+
+				"($%d::varchar = 'openai_advanced'::varchar),$1,$1)",
+				b+1, b+2, b+3, b+4, b+5, b+6, b+7, b+8, b+2, b+2)
 			args = append(args,
 				s.UserID, s.Platform,
 				s.DailyUsageUSD, s.WeeklyUsageUSD, s.MonthlyUsageUSD,
@@ -538,6 +583,12 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 				"  weekly_usage_usd     = EXCLUDED.weekly_usage_usd," +
 				"  monthly_usage_usd    = EXCLUDED.monthly_usage_usd," +
 				"  daily_window_start   = EXCLUDED.daily_window_start," +
+				"  self_service_reset_credits = CASE" +
+				"    WHEN EXCLUDED.platform = 'openai_advanced'" +
+				"      AND user_platform_quotas.weekly_window_start IS DISTINCT FROM EXCLUDED.weekly_window_start" +
+				"    THEN 1 ELSE user_platform_quotas.self_service_reset_credits END," +
+				"  self_service_reset_granted = user_platform_quotas.self_service_reset_granted" +
+				"    OR EXCLUDED.self_service_reset_granted," +
 				"  weekly_window_start  = EXCLUDED.weekly_window_start," +
 				"  monthly_window_start = EXCLUDED.monthly_window_start," +
 				"  updated_at           = EXCLUDED.updated_at")

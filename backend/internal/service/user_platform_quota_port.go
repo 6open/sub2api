@@ -41,7 +41,7 @@ type UserPlatformQuotaRecord struct {
 	DailyUsageUSD   float64
 	WeeklyUsageUSD  float64
 	MonthlyUsageUSD float64
-	// SelfServiceResetCredits 是用户可自行消费的重置次数；当前仅高级额度使用。
+	// SelfServiceResetCredits 是用户在当前周可自行消费的重置次数；当前仅高级额度使用。
 	SelfServiceResetCredits int
 	// 窗口起始时间（可选，用于未来 reset 校验）
 	DailyWindowStart   *time.Time
@@ -69,7 +69,7 @@ type UserPlatformQuotaRepository interface {
 	// ResetExpiredWindow 重置指定窗口（"daily"|"weekly"|"monthly"）的用量与起始时间。
 	// 未命中活跃记录时返回（service-side wrapper of repository.ErrUserPlatformQuotaNotFound）。
 	ResetExpiredWindow(ctx context.Context, userID int64, platform string, window string, newStart time.Time) error
-	// ConsumeSelfServiceWeeklyReset 原子扣减一次自助重置机会并清零当前周用量。
+	// ConsumeSelfServiceWeeklyReset 原子扣减本周一次自助重置机会并清零当前周用量。
 	ConsumeSelfServiceWeeklyReset(ctx context.Context, userID int64, platform string, currentWeekStart time.Time) error
 	// BatchSnapshotUsage 绝对值覆盖写入整批 usage 快照。FK 违反返回 ErrUserPlatformQuotaFKViolation。
 	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error

@@ -77,11 +77,11 @@ func (UserPlatformQuota) Fields() []ent.Field {
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 
-		// 用户自助重置次数。当前仅 openai_advanced 使用，其他平台保持 0。
+		// 当前周用户自助重置次数。仅 openai_advanced 使用，每个自然周恢复为 1。
 		field.Int("self_service_reset_credits").
 			Default(0).
 			NonNegative(),
-		// 标记初始重置卡已经发放，防止迁移重跑或默认快照重复发卡。
+		// 标记初始重置卡已经发放，防止迁移重跑或默认快照在同一周重复发卡。
 		field.Bool("self_service_reset_granted").
 			Default(false),
 
