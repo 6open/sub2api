@@ -17,11 +17,86 @@ import (
 )
 
 func setupAPIKeyHandler(adminSvc service.AdminService) *gin.Engine {
+	return setupAPIKeyHandlerWithCreator(adminSvc, nil)
+}
+
+func setupAPIKeyHandlerWithCreator(adminSvc service.AdminService, creator userAPIKeyCreator) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	h := NewAdminAPIKeyHandler(adminSvc)
+	h := NewAdminAPIKeyHandler(adminSvc, nil)
+	h.apiKeyCreator = creator
 	router.PUT("/api/v1/admin/api-keys/:id", h.UpdateGroup)
+	router.POST("/api/v1/admin/users/:id/api-keys", h.CreateForUser)
 	return router
+}
+
+type stubUserAPIKeyCreator struct {
+	created *service.APIKey
+	err     error
+	userID  int64
+	request service.CreateAPIKeyRequest
+}
+
+func (s *stubUserAPIKeyCreator) Create(_ context.Context, userID int64, req service.CreateAPIKeyRequest) (*service.APIKey, error) {
+	s.userID = userID
+	s.request = req
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.created, nil
+}
+
+func TestAdminAPIKeyHandler_CreateForUser(t *testing.T) {
+	groupID := int64(2)
+	creator := &stubUserAPIKeyCreator{created: &service.APIKey{
+		ID:        99,
+		UserID:    45,
+		Key:       "sk-created-for-public-service",
+		Name:      "bbs-production",
+		GroupID:   &groupID,
+		Status:    service.StatusActive,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}}
+	router := setupAPIKeyHandlerWithCreator(newStubAdminService(), creator)
+	body := `{"name":"bbs-production","group_id":2,"quota":25,"expires_in_days":90,"ip_whitelist":["203.0.113.10"]}`
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/45/api-keys", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(45), creator.userID)
+	require.Equal(t, "bbs-production", creator.request.Name)
+	require.Equal(t, groupID, *creator.request.GroupID)
+	require.Equal(t, 25.0, creator.request.Quota)
+	require.Equal(t, []string{"203.0.113.10"}, creator.request.IPWhitelist)
+	require.NotNil(t, creator.request.ExpiresInDays)
+	require.Equal(t, 90, *creator.request.ExpiresInDays)
+	require.Contains(t, rec.Body.String(), "sk-created-for-public-service")
+}
+
+func TestAdminAPIKeyHandler_CreateForUserRejectsInvalidInput(t *testing.T) {
+	router := setupAPIKeyHandlerWithCreator(newStubAdminService(), &stubUserAPIKeyCreator{})
+
+	for _, tc := range []struct {
+		name string
+		path string
+		body string
+	}{
+		{name: "invalid user id", path: "/api/v1/admin/users/nope/api-keys", body: `{"name":"bbs"}`},
+		{name: "missing name", path: "/api/v1/admin/users/45/api-keys", body: `{"group_id":2}`},
+		{name: "negative quota", path: "/api/v1/admin/users/45/api-keys", body: `{"name":"bbs","quota":-1}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, tc.path, bytes.NewBufferString(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+		})
+	}
 }
 
 func TestAdminAPIKeyHandler_UpdateGroup_InvalidID(t *testing.T) {

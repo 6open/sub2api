@@ -226,6 +226,39 @@ export async function getUserApiKeys(id: number): Promise<PaginatedResponse<ApiK
   return data
 }
 
+export interface AdminCreateUserApiKeyRequest {
+  name: string
+  group_id?: number | null
+  ip_whitelist?: string[]
+  ip_blacklist?: string[]
+  quota?: number
+  expires_in_days?: number
+  rate_limit_5h?: number
+  rate_limit_1d?: number
+  rate_limit_7d?: number
+}
+
+const createUserApiKeyOperationKeys = new Map<string, string>()
+
+/** Create an API key owned by the selected user. */
+export async function createUserApiKey(
+  id: number,
+  request: AdminCreateUserApiKeyRequest
+): Promise<ApiKey> {
+  const operation = `${id}:${JSON.stringify(request)}`
+  let idempotencyKey = createUserApiKeyOperationKeys.get(operation)
+  if (!idempotencyKey) {
+    const requestID = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    idempotencyKey = `user-api-key-create-${id}-${requestID}`
+    createUserApiKeyOperationKeys.set(operation, idempotencyKey)
+  }
+  const { data } = await apiClient.post<ApiKey>(`/admin/users/${id}/api-keys`, request, {
+    headers: { 'Idempotency-Key': idempotencyKey }
+  })
+  createUserApiKeyOperationKeys.delete(operation)
+  return data
+}
+
 /**
  * Get user's usage statistics
  * @param id - User ID
@@ -422,6 +455,7 @@ export const usersAPI = {
   batchUpdateLimits,
   toggleStatus,
   getUserApiKeys,
+  createUserApiKey,
   getUserUsageStats,
   getUserBalanceHistory,
   replaceGroup,

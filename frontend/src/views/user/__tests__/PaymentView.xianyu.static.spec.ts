@@ -37,12 +37,13 @@ describe('PaymentView static purchase entries', () => {
 
   it('groups secondary purchase routes in one compact full-width card', () => {
     const source = readFileSync(resolve(__dirname, '../PaymentView.vue'), 'utf8')
+    const secondaryRoutesSection = source.match(/<section class="card overflow-hidden">[\s\S]*?其他购买方式[\s\S]*?<\/section>/)?.[0] || ''
 
-    expect(source).toContain('其他购买方式')
-    expect(source).toContain('class="card overflow-hidden"')
-    expect(source).toContain('lg:grid-cols-3')
-    expect(source).toContain('lg:divide-x')
-    expect(source).not.toContain('min-h-[')
+    expect(secondaryRoutesSection).toContain('其他购买方式')
+    expect(secondaryRoutesSection).toContain('class="card overflow-hidden"')
+    expect(secondaryRoutesSection).toContain('lg:grid-cols-3')
+    expect(secondaryRoutesSection).toContain('lg:divide-x')
+    expect(secondaryRoutesSection).not.toContain('min-h-[')
   })
 
   it('renders the QQ group entry on the purchase page', () => {

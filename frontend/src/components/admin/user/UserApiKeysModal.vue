@@ -1,20 +1,84 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.users.userApiKeys')" width="wide" @close="handleClose">
     <div v-if="user" class="space-y-4">
-      <div class="flex items-center gap-3 rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
+      <div class="flex items-center gap-3 rounded-lg bg-gray-50 p-4 dark:bg-dark-700">
         <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30">
           <span class="text-lg font-medium text-primary-700 dark:text-primary-300">{{ user.email.charAt(0).toUpperCase() }}</span>
         </div>
-        <div><p class="font-medium text-gray-900 dark:text-white">{{ user.email }}</p><p class="text-sm text-gray-500 dark:text-dark-400">{{ user.username }}</p></div>
+        <div class="min-w-0 flex-1"><p class="truncate font-medium text-gray-900 dark:text-white">{{ user.email }}</p><p class="truncate text-sm text-gray-500 dark:text-dark-400">{{ user.username }}</p></div>
+        <button data-test="toggle-create-key" type="button" class="btn btn-primary btn-sm shrink-0" @click="toggleCreateForm">
+          <Icon :name="createFormVisible ? 'x' : 'plus'" size="sm" class="mr-1.5" />
+          {{ createFormVisible ? t('common.cancel') : t('admin.users.createApiKey') }}
+        </button>
       </div>
+
+      <form v-if="createFormVisible" data-test="create-key-form" class="border-y border-gray-200 py-4 dark:border-dark-600" @submit.prevent="createKey">
+        <div class="grid gap-4 md:grid-cols-2">
+          <label class="block">
+            <span class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.users.apiKeyName') }}</span>
+            <input v-model.trim="createForm.name" data-test="create-key-name" type="text" required maxlength="100" class="input w-full" :placeholder="t('admin.users.apiKeyNamePlaceholder')" />
+          </label>
+          <label class="block">
+            <span class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.users.group') }}</span>
+            <select v-model="createForm.groupId" data-test="create-key-group" required class="input w-full">
+              <option value="" disabled>{{ t('admin.users.selectApiKeyGroup') }}</option>
+              <option v-for="group in availableCreateGroups" :key="group.id" :value="String(group.id)">
+                {{ group.name }} / {{ group.platform }} / {{ Number(group.rate_multiplier).toFixed(2) }}x
+              </option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.users.apiKeyQuota') }}</span>
+            <input v-model.number="createForm.quota" data-test="create-key-quota" type="number" min="0" step="0.01" class="input w-full" />
+            <span class="mt-1 block text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.apiKeyQuotaHint') }}</span>
+          </label>
+          <label class="block">
+            <span class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.users.apiKeyExpiry') }}</span>
+            <input v-model="createForm.expiresInDays" data-test="create-key-expiry" type="number" min="1" step="1" class="input w-full" :placeholder="t('admin.users.apiKeyExpiryPlaceholder')" />
+          </label>
+          <label class="block md:col-span-2">
+            <span class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.users.apiKeyIPWhitelist') }}</span>
+            <textarea v-model.trim="createForm.ipWhitelist" data-test="create-key-ip-whitelist" rows="2" class="input w-full resize-y font-mono text-sm" :placeholder="t('admin.users.apiKeyIPWhitelistPlaceholder')"></textarea>
+          </label>
+        </div>
+        <div class="mt-4 flex justify-end">
+          <button data-test="submit-create-key" type="submit" class="btn btn-primary" :disabled="creatingKey || !canCreateKey">
+            <Icon v-if="creatingKey" name="refresh" size="sm" class="mr-1.5 animate-spin" />
+            <Icon v-else name="key" size="sm" class="mr-1.5" />
+            {{ creatingKey ? t('admin.users.creatingApiKey') : t('admin.users.createApiKey') }}
+          </button>
+        </div>
+      </form>
       <div v-if="loading" class="flex justify-center py-8"><svg class="h-8 w-8 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
       <div v-else-if="apiKeys.length === 0" class="py-8 text-center"><p class="text-sm text-gray-500">{{ t('admin.users.noApiKeys') }}</p></div>
       <div v-else ref="scrollContainerRef" class="max-h-96 space-y-3 overflow-y-auto" @scroll="closeGroupSelector">
-        <div v-for="key in apiKeys" :key="key.id" class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-600 dark:bg-dark-800">
+        <div v-for="key in apiKeys" :key="key.id" class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-600 dark:bg-dark-800">
           <div class="flex items-start justify-between">
             <div class="min-w-0 flex-1">
               <div class="mb-1 flex items-center gap-2"><span class="font-medium text-gray-900 dark:text-white">{{ key.name }}</span><span :class="['badge text-xs', key.status === 'active' ? 'badge-success' : 'badge-danger']">{{ key.status }}</span></div>
-              <p class="truncate font-mono text-sm text-gray-500">{{ key.key.substring(0, 20) }}...{{ key.key.substring(key.key.length - 8) }}</p>
+              <p class="break-all font-mono text-sm text-gray-500 dark:text-dark-400">{{ isKeyRevealed(key.id) ? key.key : maskKey(key.key) }}</p>
+            </div>
+            <div class="ml-3 flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                class="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-dark-700 dark:hover:text-gray-200"
+                :title="isKeyRevealed(key.id) ? t('admin.users.hideApiKey') : t('admin.users.showApiKey')"
+                :aria-label="isKeyRevealed(key.id) ? t('admin.users.hideApiKey') : t('admin.users.showApiKey')"
+                :data-test="`toggle-key-${key.id}`"
+                @click="toggleKeyVisibility(key.id)"
+              >
+                <Icon :name="isKeyRevealed(key.id) ? 'eyeOff' : 'eye'" size="sm" />
+              </button>
+              <button
+                type="button"
+                class="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-dark-700 dark:hover:text-gray-200"
+                :title="copiedKeyId === key.id ? t('admin.users.apiKeyCopied') : t('admin.users.copyApiKey')"
+                :aria-label="copiedKeyId === key.id ? t('admin.users.apiKeyCopied') : t('admin.users.copyApiKey')"
+                :data-test="`copy-key-${key.id}`"
+                @click="copyKey(key)"
+              >
+                <Icon :name="copiedKeyId === key.id ? 'check' : 'copy'" size="sm" />
+              </button>
             </div>
           </div>
           <div class="mt-3 flex flex-wrap gap-4 text-xs text-gray-500">
@@ -106,10 +170,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
+import { useClipboard } from '@/composables/useClipboard'
 import { formatDateTime } from '@/utils/format'
 import type { AdminUser, AdminGroup, ApiKey } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -120,10 +185,15 @@ const props = defineProps<{ show: boolean; user: AdminUser | null }>()
 const emit = defineEmits(['close'])
 const { t } = useI18n()
 const appStore = useAppStore()
+const { copyToClipboard } = useClipboard()
 
 const apiKeys = ref<ApiKey[]>([])
 const allGroups = ref<AdminGroup[]>([])
 const loading = ref(false)
+const creatingKey = ref(false)
+const createFormVisible = ref(false)
+const revealedKeyIds = ref(new Set<number>())
+const copiedKeyId = ref<number | null>(null)
 const updatingKeyIds = ref(new Set<number>())
 const groupSelectorKeyId = ref<number | null>(null)
 const dropdownPosition = ref<{ top: number; left: number } | null>(null)
@@ -134,6 +204,29 @@ const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
 const selectedKeyForGroup = computed(() => {
   if (groupSelectorKeyId.value === null) return null
   return apiKeys.value.find((k) => k.id === groupSelectorKeyId.value) || null
+})
+
+const createForm = reactive({
+  name: '',
+  groupId: '',
+  quota: 0,
+  expiresInDays: '',
+  ipWhitelist: '',
+})
+
+const availableCreateGroups = computed(() => {
+  const allowedGroups = new Set(props.user?.allowed_groups || [])
+  return allGroups.value.filter((group) =>
+    group.status === 'active'
+      && group.subscription_type === 'standard'
+      && (!group.is_exclusive || allowedGroups.has(group.id))
+  )
+})
+
+const canCreateKey = computed(() => {
+  return createForm.name.trim().length > 0
+    && Number(createForm.groupId) > 0
+    && Number(createForm.quota) >= 0
 })
 
 const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance | null) => {
@@ -150,6 +243,9 @@ watch(() => props.show, (v) => {
     loadGroups()
   } else {
     closeGroupSelector()
+    resetCreateForm()
+    revealedKeyIds.value = new Set()
+    copiedKeyId.value = null
   }
 })
 
@@ -173,6 +269,73 @@ const loadGroups = async () => {
     allGroups.value = groups
   } catch (error) {
     console.error('Failed to load groups:', error)
+  }
+}
+
+const resetCreateForm = () => {
+  createFormVisible.value = false
+  createForm.name = ''
+  createForm.groupId = ''
+  createForm.quota = 0
+  createForm.expiresInDays = ''
+  createForm.ipWhitelist = ''
+}
+
+const toggleCreateForm = () => {
+  createFormVisible.value = !createFormVisible.value
+  if (createFormVisible.value && !createForm.groupId && availableCreateGroups.value.length === 1) {
+    createForm.groupId = String(availableCreateGroups.value[0].id)
+  }
+}
+
+const parseIPWhitelist = (value: string): string[] => {
+  return value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean)
+}
+
+const createKey = async () => {
+  if (!props.user || !canCreateKey.value || creatingKey.value) return
+
+  creatingKey.value = true
+  try {
+    const expiresInDays = Number(createForm.expiresInDays)
+    const key = await adminAPI.users.createUserApiKey(props.user.id, {
+      name: createForm.name.trim(),
+      group_id: Number(createForm.groupId),
+      quota: Number(createForm.quota) || 0,
+      expires_in_days: Number.isInteger(expiresInDays) && expiresInDays > 0 ? expiresInDays : undefined,
+      ip_whitelist: parseIPWhitelist(createForm.ipWhitelist),
+    })
+    apiKeys.value = [key, ...apiKeys.value.filter((item) => item.id !== key.id)]
+    revealedKeyIds.value = new Set([...revealedKeyIds.value, key.id])
+    resetCreateForm()
+    appStore.showSuccess(t('admin.users.apiKeyCreated'))
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.users.apiKeyCreateFailed'))
+  } finally {
+    creatingKey.value = false
+  }
+}
+
+const maskKey = (key: string): string => {
+  if (key.length <= 16) return `${key.slice(0, 4)}...${key.slice(-4)}`
+  return `${key.slice(0, 12)}...${key.slice(-8)}`
+}
+
+const isKeyRevealed = (keyId: number): boolean => revealedKeyIds.value.has(keyId)
+
+const toggleKeyVisibility = (keyId: number) => {
+  const next = new Set(revealedKeyIds.value)
+  if (next.has(keyId)) next.delete(keyId)
+  else next.add(keyId)
+  revealedKeyIds.value = next
+}
+
+const copyKey = async (key: ApiKey) => {
+  if (await copyToClipboard(key.key, t('admin.users.apiKeyCopied'))) {
+    copiedKeyId.value = key.id
+    window.setTimeout(() => {
+      if (copiedKeyId.value === key.id) copiedKeyId.value = null
+    }, 2000)
   }
 }
 
