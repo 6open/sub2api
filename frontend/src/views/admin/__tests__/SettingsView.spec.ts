@@ -502,6 +502,7 @@ const baseSettingsResponse = {
   payment_visible_method_wxpay_enabled: true,
   openai_low_upstream_rate_priority_enabled: false,
   openai_oauth_scheduling_rate_multiplier: 1,
+  openai_advanced_quota_usage_multiplier: 0.2,
   openai_advanced_scheduler_enabled: false,
   openai_advanced_scheduler_sticky_weighted_enabled: false,
   openai_advanced_scheduler_subscription_priority_enabled: false,
@@ -1394,6 +1395,11 @@ describe("admin SettingsView payment visible method controls", () => {
     const wrapper = mountView();
 
     await flushPromises();
+    const advancedQuotaRateInput = wrapper.get(
+      '[data-testid="openai-advanced-quota-usage-multiplier"]',
+    );
+    expect((advancedQuotaRateInput.element as HTMLInputElement).value).toBe("0.2");
+    await advancedQuotaRateInput.setValue("0.35");
     expect(
       wrapper.find('[data-testid="openai-oauth-scheduling-rate-multiplier"]').exists(),
     ).toBe(false);
@@ -1420,6 +1426,7 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
+        openai_advanced_quota_usage_multiplier: 0.35,
         openai_low_upstream_rate_priority_enabled: true,
         openai_oauth_scheduling_rate_multiplier: 0.05,
       }),

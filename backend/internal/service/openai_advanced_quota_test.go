@@ -45,8 +45,10 @@ func TestOpenAIAdvancedQuotaUsageCost(t *testing.T) {
 	cfg := advancedQuotaTestConfig()
 	user := &User{ID: 1, Role: RoleUser}
 	cost := &CostBreakdown{TotalCost: 1.25, ActualCost: 0.25}
-	require.Equal(t, 0.25, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "high", cost))
-	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "medium", cost))
-	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-luna", "max", cost))
-	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "high", nil))
+	require.Equal(t, 0.25, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "high", cost, 0.2))
+	require.Equal(t, 0.625, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "high", cost, 0.5))
+	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "high", cost, 0))
+	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "medium", cost, 0.2))
+	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-luna", "max", cost, 0.2))
+	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "high", nil, 0.2))
 }

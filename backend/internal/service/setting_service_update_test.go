@@ -62,7 +62,11 @@ func (s *settingGetAllRepoStub) Get(ctx context.Context, key string) (*Setting, 
 }
 
 func (s *settingGetAllRepoStub) GetValue(ctx context.Context, key string) (string, error) {
-	panic("unexpected GetValue call")
+	value, ok := s.values[key]
+	if !ok {
+		return "", ErrSettingNotFound
+	}
+	return value, nil
 }
 
 func (s *settingGetAllRepoStub) Set(ctx context.Context, key, value string) error {
@@ -411,6 +415,7 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 		PaymentVisibleMethodWxpayEnabled:                   false,
 		OpenAILowUpstreamRatePriorityEnabled:               true,
 		OpenAIOAuthSchedulingRateMultiplier:                0.05,
+		OpenAIAdvancedQuotaUsageMultiplier:                 0.35,
 		OpenAIAdvancedSchedulerEnabled:                     true,
 		OpenAIAdvancedSchedulerStickyWeightedEnabled:       true,
 		OpenAIAdvancedSchedulerSubscriptionPriorityEnabled: true,
@@ -433,6 +438,7 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "false", repo.updates[SettingPaymentVisibleMethodWxpayEnabled])
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAILowUpstreamRatePriorityEnabled])
 	require.Equal(t, "0.05", repo.updates[SettingKeyOpenAIOAuthSchedulingRateMultiplier])
+	require.Equal(t, "0.35", repo.updates[SettingKeyOpenAIAdvancedQuotaUsageMultiplier])
 	require.Equal(t, "true", repo.updates[openAIAdvancedSchedulerSettingKey])
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled])
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled])
@@ -455,6 +461,16 @@ func TestSettingService_UpdateSettingsRejectsInvalidOpenAIOAuthSchedulingRateMul
 
 	for _, rate := range []float64{-0.01, math.NaN(), math.Inf(1)} {
 		err := svc.UpdateSettings(context.Background(), &SystemSettings{OpenAIOAuthSchedulingRateMultiplier: rate})
+		require.Error(t, err)
+	}
+}
+
+func TestSettingService_UpdateSettingsRejectsInvalidOpenAIAdvancedQuotaUsageMultiplier(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	for _, rate := range []float64{-0.01, math.NaN(), math.Inf(1)} {
+		err := svc.UpdateSettings(context.Background(), &SystemSettings{OpenAIAdvancedQuotaUsageMultiplier: rate})
 		require.Error(t, err)
 	}
 }
@@ -517,6 +533,22 @@ func TestSettingService_ParseSettingsDefaultsOpenAIOAuthSchedulingRateMultiplier
 
 	require.Equal(t, 1.0, svc.parseSettings(map[string]string{}).OpenAIOAuthSchedulingRateMultiplier)
 	require.Equal(t, 0.05, svc.parseSettings(map[string]string{SettingKeyOpenAIOAuthSchedulingRateMultiplier: "0.05"}).OpenAIOAuthSchedulingRateMultiplier)
+	require.Equal(t, 0.2, svc.parseSettings(map[string]string{}).OpenAIAdvancedQuotaUsageMultiplier)
+	require.Equal(t, 0.35, svc.parseSettings(map[string]string{SettingKeyOpenAIAdvancedQuotaUsageMultiplier: "0.35"}).OpenAIAdvancedQuotaUsageMultiplier)
+}
+
+func TestSettingService_GetOpenAIAdvancedQuotaUsageMultiplierCachesAndRefreshes(t *testing.T) {
+	repo := &settingGetAllRepoStub{values: map[string]string{
+		SettingKeyOpenAIAdvancedQuotaUsageMultiplier: "0.35",
+	}}
+	svc := NewSettingService(repo, &config.Config{})
+
+	require.Equal(t, 0.35, svc.GetOpenAIAdvancedQuotaUsageMultiplier(context.Background()))
+	repo.values[SettingKeyOpenAIAdvancedQuotaUsageMultiplier] = "0.5"
+	require.Equal(t, 0.35, svc.GetOpenAIAdvancedQuotaUsageMultiplier(context.Background()))
+
+	svc.refreshCachedSettings(&SystemSettings{OpenAIAdvancedQuotaUsageMultiplier: 0.5})
+	require.Equal(t, 0.5, svc.GetOpenAIAdvancedQuotaUsageMultiplier(context.Background()))
 }
 
 func TestSettingService_GetAllSettings_OpenAIAdvancedSchedulerEffectiveValuesUseConfig(t *testing.T) {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"math"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -73,10 +74,13 @@ func RewriteOpenAIReasoningEffort(body []byte, effort string) ([]byte, bool, err
 	return next, err == nil, err
 }
 
-func OpenAIAdvancedQuotaUsageCost(cfg *config.Config, user *User, platform, model, effort string, cost *CostBreakdown) float64 {
-	if cost == nil || cost.ActualCost <= 0 || !IsOpenAIAdvancedReasoningEffort(effort) ||
+func OpenAIAdvancedQuotaUsageCost(cfg *config.Config, user *User, platform, model, effort string, cost *CostBreakdown, multiplier float64) float64 {
+	if cost == nil || cost.TotalCost <= 0 || !IsOpenAIAdvancedReasoningEffort(effort) ||
 		!OpenAIAdvancedQuotaEnabledFor(cfg, user, platform, model) {
 		return 0
 	}
-	return cost.ActualCost
+	if multiplier < 0 || math.IsNaN(multiplier) || math.IsInf(multiplier, 0) {
+		multiplier = DefaultOpenAIAdvancedQuotaUsageMultiplier
+	}
+	return cost.TotalCost * multiplier
 }

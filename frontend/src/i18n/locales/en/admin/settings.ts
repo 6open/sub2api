@@ -1280,6 +1280,10 @@ export default {
         sourceHint: 'Choose an explicit source before enabling the method. Not configured methods are not exposed.',
         sourceRequiredError: 'Select a payment source before enabling {title}.'
       },
+      advancedQuotaMetering: {
+        multiplier: 'Advanced quota metering rate',
+        multiplierHint: 'Advanced reasoning usage is metered as model list cost times this rate; regular balance billing is unchanged.',
+      },
       openaiExperimentalScheduler: {
         title: 'OpenAI experimental scheduler policy',
         description: "Disabled by default. When enabled, this only changes the gateway's experimental account-selection policy for OpenAI traffic; it does not indicate an upstream OpenAI capability.",

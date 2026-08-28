@@ -441,7 +441,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 	advancedQuotaCost := 0.0
 	if usageLog.ReasoningEffort != nil {
-		advancedQuotaCost = OpenAIAdvancedQuotaUsageCost(s.cfg, user, quotaPlatform, usageLog.Model, *usageLog.ReasoningEffort, cost)
+		multiplier := DefaultOpenAIAdvancedQuotaUsageMultiplier
+		if s.settingService != nil {
+			multiplier = s.settingService.GetOpenAIAdvancedQuotaUsageMultiplier(ctx)
+		}
+		advancedQuotaCost = OpenAIAdvancedQuotaUsageCost(s.cfg, user, quotaPlatform, usageLog.Model, *usageLog.ReasoningEffort, cost, multiplier)
 	}
 
 	billingErr := func() error {

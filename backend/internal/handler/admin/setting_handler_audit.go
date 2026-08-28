@@ -506,6 +506,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.OpenAIOAuthSchedulingRateMultiplier != after.OpenAIOAuthSchedulingRateMultiplier {
 		changed = append(changed, "openai_oauth_scheduling_rate_multiplier")
 	}
+	if before.OpenAIAdvancedQuotaUsageMultiplier != after.OpenAIAdvancedQuotaUsageMultiplier {
+		changed = append(changed, "openai_advanced_quota_usage_multiplier")
+	}
 	if before.OpenAIAdvancedSchedulerEnabled != after.OpenAIAdvancedSchedulerEnabled {
 		changed = append(changed, "openai_advanced_scheduler_enabled")
 	}
