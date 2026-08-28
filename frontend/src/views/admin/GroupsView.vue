@@ -101,6 +101,19 @@
               {{ t("admin.groups.sortOrder") }}
             </button>
             <button
+              type="button"
+              class="btn btn-secondary"
+              data-testid="advanced-quota-multiplier-button"
+              @click="showAdvancedQuotaMultiplierModal = true"
+            >
+              <Icon name="calculator" size="md" class="mr-2" />
+              {{
+                t("admin.groups.advancedQuotaMultiplier.button", {
+                  value: advancedQuotaMultiplierLabel,
+                })
+              }}
+            </button>
+            <button
               @click="openCreateModal"
               class="btn btn-primary"
               data-tour="groups-create-btn"
@@ -4403,6 +4416,13 @@
       @close="showRPMOverridesModal = false"
       @success="loadGroups"
     />
+
+    <AdvancedQuotaMultiplierModal
+      :show="showAdvancedQuotaMultiplierModal"
+      :current-multiplier="advancedQuotaMultiplier"
+      @close="showAdvancedQuotaMultiplierModal = false"
+      @saved="handleAdvancedQuotaMultiplierSaved"
+    />
   </AppLayout>
 </template>
 
@@ -4435,6 +4455,7 @@ import PlatformIcon from "@/components/common/PlatformIcon.vue";
 import Icon from "@/components/icons/Icon.vue";
 import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";
 import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
+import AdvancedQuotaMultiplierModal from "@/components/admin/group/AdvancedQuotaMultiplierModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";
@@ -4986,6 +5007,27 @@ const showRateMultipliersModal = ref(false);
 const rateMultipliersGroup = ref<AdminGroup | null>(null);
 const showRPMOverridesModal = ref(false);
 const rpmOverridesGroup = ref<AdminGroup | null>(null);
+const showAdvancedQuotaMultiplierModal = ref(false);
+const advancedQuotaMultiplier = ref<number | null>(null);
+const advancedQuotaMultiplierLabel = computed(() =>
+  advancedQuotaMultiplier.value === null
+    ? "--"
+    : `${advancedQuotaMultiplier.value}x`,
+);
+
+const loadAdvancedQuotaMultiplier = async () => {
+  try {
+    const settings = await adminAPI.settings.getSettings();
+    advancedQuotaMultiplier.value =
+      settings.openai_advanced_quota_usage_multiplier ?? 0.2;
+  } catch (error) {
+    console.error("Failed to load advanced quota multiplier:", error);
+  }
+};
+
+const handleAdvancedQuotaMultiplierSaved = (value: number) => {
+  advancedQuotaMultiplier.value = value;
+};
 const sortableGroups = ref<AdminGroup[]>([]);
 type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
 type CompositeRouteFormState = {
@@ -6827,6 +6869,7 @@ const saveSortOrder = async () => {
 
 onMounted(() => {
   loadGroups();
+  void loadAdvancedQuotaMultiplier();
   void loadLiveCapability();
   loadModelsListCandidates("create", 0, createForm.platform);
   document.addEventListener("click", handleClickOutside);

@@ -12,6 +12,7 @@ const {
   getUsageSummary,
   getCapacitySummary,
   getLiveCapability,
+  getSettings,
   showSuccess,
   showError
 } = vi.hoisted(() => ({
@@ -21,6 +22,7 @@ const {
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
   getLiveCapability: vi.fn(),
+  getSettings: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn()
 }))
@@ -43,6 +45,9 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: vi.fn(),
       getById: vi.fn()
+    },
+    settings: {
+      getSettings
     }
   }
 }))
@@ -153,6 +158,7 @@ function mountView() {
         GroupCapacityBadge: true,
         GroupRateMultipliersModal: true,
         GroupRPMOverridesModal: true,
+        AdvancedQuotaMultiplierModal: true,
         VueDraggable: true
       }
     }
@@ -170,6 +176,7 @@ describe('GroupsView duplicate action', () => {
       getUsageSummary,
       getCapacitySummary,
       getLiveCapability,
+      getSettings,
       showSuccess,
       showError
     ]) {
@@ -189,6 +196,7 @@ describe('GroupsView duplicate action', () => {
       name: 'Primary (Copy)',
       status: 'inactive'
     })
+    getSettings.mockResolvedValue({ openai_advanced_quota_usage_multiplier: 0.2 })
     getModelsListCandidates.mockResolvedValue([])
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])

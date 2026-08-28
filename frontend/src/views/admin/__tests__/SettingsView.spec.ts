@@ -1391,15 +1391,13 @@ describe("admin SettingsView payment visible method controls", () => {
     });
   });
 
-  it("places and explains rate controls for both scheduling modes", async () => {
+  it("places and explains scheduling rate controls for both scheduling modes", async () => {
     const wrapper = mountView();
 
     await flushPromises();
-    const advancedQuotaRateInput = wrapper.get(
-      '[data-testid="openai-advanced-quota-usage-multiplier"]',
-    );
-    expect((advancedQuotaRateInput.element as HTMLInputElement).value).toBe("0.2");
-    await advancedQuotaRateInput.setValue("0.35");
+    expect(
+      wrapper.find('[data-testid="openai-advanced-quota-usage-multiplier"]').exists(),
+    ).toBe(false);
     expect(
       wrapper.find('[data-testid="openai-oauth-scheduling-rate-multiplier"]').exists(),
     ).toBe(false);
@@ -1426,10 +1424,12 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
-        openai_advanced_quota_usage_multiplier: 0.35,
         openai_low_upstream_rate_priority_enabled: true,
         openai_oauth_scheduling_rate_multiplier: 0.05,
       }),
+    );
+    expect(updateSettings.mock.calls.at(-1)?.[0]).not.toHaveProperty(
+      "openai_advanced_quota_usage_multiplier",
     );
 
     await wrapper

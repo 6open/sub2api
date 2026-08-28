@@ -800,6 +800,16 @@ export default {
         saveFailed: '保存高级额度失败',
         resetSuccess: '本周高级额度用量已重置',
         resetFailed: '重置高级额度用量失败',
+      },
+      advancedQuotaMultiplier: {
+        button: '高级额度倍率 {value}',
+        title: '调整高级额度倍率',
+        label: '高级额度计量倍率',
+        hint: '高级用量按模型原价乘以此倍率计入每周额度，不影响普通余额计费。',
+        invalid: '倍率必须是大于或等于 0 的数字',
+        loadFailed: '加载高级额度倍率失败',
+        saved: '高级额度倍率已调整为 {value}x',
+        saveFailed: '保存高级额度倍率失败',
       }
     },
 

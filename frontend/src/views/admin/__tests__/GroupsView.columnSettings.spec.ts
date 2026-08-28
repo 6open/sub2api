@@ -11,6 +11,7 @@ const {
   getUsageSummary,
   getCapacitySummary,
   getLiveCapability,
+  getSettings,
   listAccounts,
   showError,
   showSuccess,
@@ -23,6 +24,7 @@ const {
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
   getLiveCapability: vi.fn(),
+  getSettings: vi.fn(),
   listAccounts: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -65,6 +67,9 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: listAccounts,
     },
+    settings: {
+      getSettings,
+    },
   },
 }))
 
@@ -87,7 +92,13 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string, params?: Record<string, unknown>) => {
+        let value = messages[key] ?? key
+        for (const [name, replacement] of Object.entries(params ?? {})) {
+          value = value.replace(`{${name}}`, String(replacement))
+        }
+        return value
+      },
     }),
   }
 })
@@ -186,6 +197,17 @@ const IconStub = {
   template: '<span data-test="icon">{{ name }}</span>',
 }
 
+const AdvancedQuotaMultiplierModalStub = {
+  props: ['show', 'currentMultiplier'],
+  emits: ['close', 'saved'],
+  template: `
+    <div v-if="show" data-test="advanced-quota-multiplier-modal">
+      <span data-test="advanced-quota-current">{{ currentMultiplier }}</span>
+      <button data-test="advanced-quota-saved" @click="$emit('saved', 0.35)">save</button>
+    </div>
+  `,
+}
+
 const mountView = async () => {
   const wrapper = mount(GroupsView, {
     global: {
@@ -203,6 +225,7 @@ const mountView = async () => {
         GroupCapacityBadge: true,
         GroupRateMultipliersModal: true,
         GroupRPMOverridesModal: true,
+        AdvancedQuotaMultiplierModal: AdvancedQuotaMultiplierModalStub,
         VueDraggable: { template: '<div><slot /></div>' },
       },
     },
@@ -236,6 +259,7 @@ describe('admin GroupsView column settings', () => {
     getModelsListCandidates.mockReset()
     getUsageSummary.mockReset()
     getCapacitySummary.mockReset()
+    getSettings.mockReset()
     listAccounts.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
@@ -254,6 +278,7 @@ describe('admin GroupsView column settings', () => {
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
     getLiveCapability.mockResolvedValue({ supported: false })
+    getSettings.mockResolvedValue({ openai_advanced_quota_usage_multiplier: 0.2 })
     listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
     isCurrentStep.mockReturnValue(false)
   })
@@ -279,6 +304,20 @@ describe('admin GroupsView column settings', () => {
     ])
     expect(localStorage.getItem('group-hidden-columns')).toBe(JSON.stringify(['id']))
     expect(localStorage.getItem('group-column-settings-version')).toBe('2')
+  })
+
+  it('shows the current advanced quota multiplier as a top-level group action', async () => {
+    messages['admin.groups.advancedQuotaMultiplier.button'] = 'Advanced quota {value}'
+    const wrapper = await mountView()
+
+    const button = wrapper.get('[data-testid="advanced-quota-multiplier-button"]')
+    expect(button.text()).toContain('Advanced quota 0.2x')
+
+    await button.trigger('click')
+    expect(wrapper.get('[data-test="advanced-quota-current"]').text()).toBe('0.2')
+
+    await wrapper.get('[data-test="advanced-quota-saved"]').trigger('click')
+    expect(button.text()).toContain('Advanced quota 0.35x')
   })
 
   it('applies saved hidden columns on mount and ignores unknown keys', async () => {

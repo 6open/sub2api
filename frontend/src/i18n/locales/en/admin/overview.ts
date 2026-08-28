@@ -803,6 +803,16 @@ export default {
         saveFailed: 'Failed to save advanced quota',
         resetSuccess: 'Weekly advanced quota usage reset',
         resetFailed: 'Failed to reset advanced quota usage',
+      },
+      advancedQuotaMultiplier: {
+        button: 'Advanced quota {value}',
+        title: 'Adjust Advanced Quota Multiplier',
+        label: 'Advanced quota metering multiplier',
+        hint: 'Advanced usage counts as model list cost times this multiplier; regular balance billing is unchanged.',
+        invalid: 'The multiplier must be a number greater than or equal to 0.',
+        loadFailed: 'Failed to load advanced quota multiplier',
+        saved: 'Advanced quota multiplier updated to {value}x',
+        saveFailed: 'Failed to save advanced quota multiplier',
       }
     },
 

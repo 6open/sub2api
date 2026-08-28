@@ -1274,10 +1274,6 @@ export default {
         sourceHint: '启用后必须明确选择一个来源；未配置状态不会对外展示该支付方式。',
         sourceRequiredError: '{title} 已启用，请先选择支付来源。'
       },
-      advancedQuotaMetering: {
-        multiplier: '高级额度计量倍率',
-        multiplierHint: '高级推理用量按模型原价乘以此倍率计入每周高级额度；不影响普通余额扣费倍率。',
-      },
       openaiExperimentalScheduler: {
         title: 'OpenAI 实验调度策略',
         description: '默认关闭。开启后仅影响本网关在 OpenAI 账号间的实验性调度选择逻辑，不代表上游 OpenAI 官方能力。',
