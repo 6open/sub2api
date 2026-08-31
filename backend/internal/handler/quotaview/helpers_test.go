@@ -91,8 +91,8 @@ func TestLazyZeroQuotaForResponse_AdvancedResetRenewsWithExpiredWeek(t *testing.
 	}
 
 	out := LazyZeroQuotaForResponse(r, now, false)
-	if got := out["self_service_reset_credits"]; got != 1 {
-		t.Fatalf("expired advanced week should expose one renewed reset, got %v", got)
+	if got := out["self_service_reset_credits"]; got != service.OpenAIAdvancedWeeklyResetCredits {
+		t.Fatalf("expired advanced week should expose %d renewed resets, got %v", service.OpenAIAdvancedWeeklyResetCredits, got)
 	}
 	if got := out["weekly_usage_usd"]; got != float64(0) {
 		t.Fatalf("expired advanced week should expose zero usage, got %v", got)

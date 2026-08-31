@@ -18,7 +18,7 @@ func LazyZeroQuotaForResponse(r service.UserPlatformQuotaRecord, now time.Time, 
 	monthly := buildWindowSlice(r.MonthlyUsageUSD, r.MonthlyLimitUSD, r.MonthlyWindowStart, NeedsMonthlyReset(r.MonthlyWindowStart, now), NextMonthlyResetTimeFrom(r.MonthlyWindowStart, now), includeWindowStart)
 	resetCredits := r.SelfServiceResetCredits
 	if r.Platform == service.PlatformOpenAIAdvanced && weeklyExpired {
-		resetCredits = 1
+		resetCredits = service.OpenAIAdvancedWeeklyResetCredits
 	}
 	out := map[string]any{
 		"platform":                   r.Platform,
