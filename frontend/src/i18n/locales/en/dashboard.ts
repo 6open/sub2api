@@ -7,7 +7,7 @@ export default {
     advancedQuotaUnlimited: 'Unlimited',
     advancedQuotaUsed: '${used} used this week',
     advancedQuotaUsedLabel: 'Used this week',
-    advancedQuotaResetAvailable: '1 quota reset available this week',
+    advancedQuotaResetAvailable: '{count} quota resets remaining this week',
     advancedQuotaResetButton: 'Reset advanced quota',
     advancedQuotaResetTitle: 'Reset advanced quota',
     advancedQuotaResetConfirm: 'This uses this week\'s reset and restores the full $50 advanced quota. The reset renews with the weekly quota and cannot be undone.',

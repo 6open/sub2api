@@ -32,15 +32,22 @@ func (f *fakeQuotaRepoForUserHandler) ListByUser(_ context.Context, _ int64) ([]
 
 func (f *fakeQuotaRepoForUserHandler) ConsumeSelfServiceWeeklyReset(_ context.Context, _ int64, _ string, _ time.Time) error {
 	f.consumeCalls++
-	return f.consumeErr
+	if f.consumeErr != nil {
+		return f.consumeErr
+	}
+	for i := range f.records {
+		if f.records[i].Platform == service.PlatformOpenAIAdvanced {
+			f.records[i].WeeklyUsageUSD = 0
+			f.records[i].SelfServiceResetCredits--
+		}
+	}
+	return nil
 }
 
 func (f *fakeQuotaRepoForUserHandler) GetByUserPlatform(_ context.Context, _ int64, platform string) (*service.UserPlatformQuotaRecord, error) {
 	for i := range f.records {
 		if f.records[i].Platform == platform {
 			record := f.records[i]
-			record.WeeklyUsageUSD = 0
-			record.SelfServiceResetCredits = 0
 			return &record, nil
 		}
 	}
@@ -154,7 +161,7 @@ func TestResetMyOpenAIAdvancedQuota_ConsumesOnceAndReturnsFullQuota(t *testing.T
 		WeeklyLimitUSD:          &limit,
 		WeeklyUsageUSD:          12.5,
 		WeeklyWindowStart:       &weekStart,
-		SelfServiceResetCredits: 1,
+		SelfServiceResetCredits: 2,
 	}}}
 	cache := &fakeUserQuotaCache{}
 	h := &UserHandler{userPlatformQuotaRepo: repo, userPlatformQuotaCache: cache}
@@ -175,7 +182,7 @@ func TestResetMyOpenAIAdvancedQuota_ConsumesOnceAndReturnsFullQuota(t *testing.T
 	}
 	body := w.Body.String()
 	if !strings.Contains(body, `"weekly_usage_usd":0`) ||
-		!strings.Contains(body, `"self_service_reset_credits":0`) {
+		!strings.Contains(body, `"self_service_reset_credits":1`) {
 		t.Fatalf("unexpected reset response: %s", body)
 	}
 }

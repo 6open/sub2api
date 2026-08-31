@@ -9,6 +9,8 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
 // fakeInsertRecorder 记录 BulkInsertInitial 调用，实现 UserPlatformQuotaRepository port。
@@ -82,6 +84,19 @@ func TestSnapshotPlatformQuotaDefaults_PassesToRepoBulkInsert(t *testing.T) {
 	if !found {
 		t.Error("anthropic daily = 5 not snapshotted")
 	}
+}
+
+func TestSnapshotPlatformQuotaDefaults_AdvancedQuotaStartsWithTwoResets(t *testing.T) {
+	fakeRepo := &fakeInsertRecorder{}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIAdvancedQuota.Enabled = true
+	cfg.Gateway.OpenAIAdvancedQuota.WeeklyLimitUSD = 50
+	s := &AuthService{cfg: cfg, userPlatformQuotaRepo: fakeRepo}
+
+	require.NoError(t, s.snapshotPlatformQuotaDefaults(context.Background(), 999, &signupGrantPlan{}))
+	require.Len(t, fakeRepo.records, 1)
+	require.Equal(t, PlatformOpenAIAdvanced, fakeRepo.records[0].Platform)
+	require.Equal(t, OpenAIAdvancedWeeklyResetCredits, fakeRepo.records[0].SelfServiceResetCredits)
 }
 
 // TestSnapshotPlatformQuotaDefaults_DetachesCallerTransaction 锁定 fix① 不变量：

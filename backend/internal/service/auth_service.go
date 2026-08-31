@@ -2170,7 +2170,7 @@ func (s *AuthService) snapshotPlatformQuotaDefaults(ctx context.Context, userID 
 			UserID:                  userID,
 			Platform:                PlatformOpenAIAdvanced,
 			WeeklyLimitUSD:          &weeklyLimit,
-			SelfServiceResetCredits: 1,
+			SelfServiceResetCredits: OpenAIAdvancedWeeklyResetCredits,
 		})
 	}
 	if err := s.userPlatformQuotaRepo.BulkInsertInitial(ctx, records); err != nil {

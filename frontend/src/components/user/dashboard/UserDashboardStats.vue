@@ -21,7 +21,7 @@
             {{ t('dashboard.advancedQuotaUsed', { used: formatUsd(advancedWeeklyUsage) }) }}
           </p>
           <p v-if="hasAdvancedResetCredit" class="text-xs text-emerald-600 dark:text-emerald-400">
-            {{ t('dashboard.advancedQuotaResetAvailable') }}
+            {{ t('dashboard.advancedQuotaResetAvailable', { count: advancedResetCredits }) }}
           </p>
         </div>
         <button
@@ -287,8 +287,9 @@ const advancedQuota = computed(() =>
 )
 const advancedWeeklyLimit = computed(() => advancedQuota.value?.weekly_limit_usd ?? null)
 const advancedWeeklyUsage = computed(() => advancedQuota.value?.weekly_usage_usd ?? 0)
+const advancedResetCredits = computed(() => advancedQuota.value?.self_service_reset_credits ?? 0)
 const hasAdvancedResetCredit = computed(
-  () => !props.isAdmin && (advancedQuota.value?.self_service_reset_credits ?? 0) > 0
+  () => !props.isAdmin && advancedResetCredits.value > 0
 )
 const canResetAdvancedQuota = computed(
   () => hasAdvancedResetCredit.value && advancedWeeklyUsage.value > 0

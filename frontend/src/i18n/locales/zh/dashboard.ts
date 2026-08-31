@@ -7,7 +7,7 @@ export default {
     advancedQuotaUnlimited: '无限制',
     advancedQuotaUsed: '本周已使用 ${used}',
     advancedQuotaUsedLabel: '本周已用',
-    advancedQuotaResetAvailable: '本周 1 次额度重置机会',
+    advancedQuotaResetAvailable: '本周剩余 {count} 次额度重置机会',
     advancedQuotaResetButton: '重置高级额度',
     advancedQuotaResetTitle: '重置高级额度',
     advancedQuotaResetConfirm: '将使用本周的额度重置机会，恢复本周完整 $50 高级额度。机会会随每周额度一起刷新，操作无法撤销。',
