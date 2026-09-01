@@ -74,6 +74,18 @@ func TestCheckBillingEligibility_AllowsAdminWithExhaustedBalance(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCheckBillingEligibility_AllowsQuotaOnlyOpenAIWithExhaustedBalance(t *testing.T) {
+	cache := &balanceEligibilityCacheStub{balance: -1}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIAdvancedQuota.Enabled = true
+	cfg.Gateway.OpenAIAdvancedQuota.DisableBalanceBilling = true
+	svc := NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(svc.Stop)
+
+	err := svc.CheckBillingEligibility(context.Background(), &User{ID: 1, Role: RoleUser}, nil, nil, nil, PlatformOpenAI)
+	require.NoError(t, err)
+}
+
 func TestSyncBalanceCacheAfterDeduction_InvalidatesExhaustedBalance(t *testing.T) {
 	cache := &balanceEligibilityCacheStub{
 		balance:                  0.50,

@@ -130,6 +130,11 @@ func (p *postUsageBillingParams) shouldUpdateAccountQuota() bool {
 	return p.Cost.TotalCost > 0 && p.Account.IsAPIKeyOrBedrock() && p.Account.HasAnyQuotaLimit()
 }
 
+func (p *postUsageBillingParams) disablesBalanceBilling(cfg *config.Config) bool {
+	return p != nil && !p.IsSubscriptionBill &&
+		OpenAIAdvancedQuotaDisablesBalanceBilling(cfg, p.User, p.Platform)
+}
+
 // postUsageBilling is the legacy fallback billing path used when the unified
 // billing repo is unavailable (nil). Production uses applyUsageBilling → repo.Apply
 // for atomic billing. This path only runs in tests or degraded mode.
@@ -147,7 +152,7 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 				slog.Error("increment subscription usage failed", "subscription_id", p.Subscription.ID, "error", err)
 			}
 		}
-	} else {
+	} else if !p.disablesBalanceBilling(deps.cfg) {
 		if cost.ActualCost > 0 {
 			if err := deps.userRepo.DeductBalance(billingCtx, p.User.ID, cost.ActualCost); err != nil {
 				slog.Error("deduct balance failed", "user_id", p.User.ID, "error", err)
@@ -276,7 +281,7 @@ func resolveUsageBillingPayloadFingerprint(ctx context.Context, requestPayloadHa
 	return ""
 }
 
-func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsageBillingParams) *UsageBillingCommand {
+func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsageBillingParams, cfg ...*config.Config) *UsageBillingCommand {
 	if p == nil || p.Cost == nil || p.APIKey == nil || p.User == nil || p.Account == nil {
 		return nil
 	}
@@ -315,7 +320,7 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	if p.IsSubscriptionBill && p.Subscription != nil && p.Cost.TotalCost > 0 {
 		cmd.SubscriptionID = &p.Subscription.ID
 		cmd.SubscriptionCost = p.Cost.ActualCost
-	} else if p.Cost.ActualCost > 0 {
+	} else if p.Cost.ActualCost > 0 && !p.disablesBalanceBilling(firstBillingConfig(cfg)) {
 		cmd.BalanceCost = p.Cost.ActualCost
 	}
 
@@ -333,12 +338,19 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	return cmd
 }
 
+func firstBillingConfig(configs []*config.Config) *config.Config {
+	if len(configs) == 0 {
+		return nil
+	}
+	return configs[0]
+}
+
 func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog, p *postUsageBillingParams, deps *billingDeps, repo UsageBillingRepository) (bool, error) {
 	if p == nil || deps == nil {
 		return false, nil
 	}
 
-	cmd := buildUsageBillingCommand(requestID, usageLog, p)
+	cmd := buildUsageBillingCommand(requestID, usageLog, p, deps.cfg)
 	if cmd == nil || cmd.RequestID == "" || repo == nil {
 		postUsageBilling(ctx, p, deps)
 		return true, nil
@@ -376,7 +388,7 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 		if p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
 			deps.billingCacheService.QueueUpdateSubscriptionUsage(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost)
 		}
-	} else if p.Cost.ActualCost > 0 && p.User != nil {
+	} else if p.Cost.ActualCost > 0 && p.User != nil && !p.disablesBalanceBilling(deps.cfg) {
 		syncBalanceCacheAfterDeduction(ctx, p, deps, result)
 	}
 
@@ -475,7 +487,7 @@ func notifyBalanceLow(p *postUsageBillingParams, deps *billingDeps, result *Usag
 			slog.Error("panic in notifyBalanceLow", "recover", r)
 		}
 	}()
-	if p.IsSubscriptionBill || p.Cost.ActualCost <= 0 || p.User == nil || deps.balanceNotifyService == nil {
+	if p.IsSubscriptionBill || p.disablesBalanceBilling(deps.cfg) || p.Cost.ActualCost <= 0 || p.User == nil || deps.balanceNotifyService == nil {
 		slog.Debug("notifyBalanceLow: skipped",
 			"is_subscription", p.IsSubscriptionBill,
 			"actual_cost", p.Cost.ActualCost,

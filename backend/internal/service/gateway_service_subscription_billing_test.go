@@ -4,6 +4,8 @@ package service
 
 import (
 	"testing"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
 // TestBuildUsageBillingCommand_SubscriptionAppliesRateMultiplier locks in the fix
@@ -81,5 +83,26 @@ func TestBuildUsageBillingCommand_SubscriptionAppliesRateMultiplier(t *testing.T
 				t.Errorf("BalanceCost = %v, want %v", cmd.BalanceCost, tt.wantBalance)
 			}
 		})
+	}
+}
+
+func TestBuildUsageBillingCommand_QuotaOnlySkipsBalanceCost(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIAdvancedQuota.Enabled = true
+	cfg.Gateway.OpenAIAdvancedQuota.DisableBalanceBilling = true
+	p := &postUsageBillingParams{
+		Cost:     &CostBreakdown{TotalCost: 1, ActualCost: 0.2},
+		User:     &User{ID: 1, Role: RoleUser},
+		APIKey:   &APIKey{ID: 2},
+		Account:  &Account{ID: 3},
+		Platform: PlatformOpenAI,
+	}
+
+	cmd := buildUsageBillingCommand("req-quota-only", nil, p, cfg)
+	if cmd == nil {
+		t.Fatal("buildUsageBillingCommand returned nil")
+	}
+	if cmd.BalanceCost != 0 {
+		t.Fatalf("BalanceCost = %v, want 0", cmd.BalanceCost)
 	}
 }

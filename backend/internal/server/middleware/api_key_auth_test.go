@@ -1427,6 +1427,38 @@ func TestAPIKeyAuthRejectsExhaustedBalance(t *testing.T) {
 	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "Insufficient account balance")
 }
 
+func TestAPIKeyAuthAllowsQuotaOnlyOpenAIWithExhaustedBalance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	user := &service.User{ID: 10, Role: service.RoleUser, Status: service.StatusActive, Balance: -1, Concurrency: 3}
+	apiKey := &service.APIKey{
+		ID: 105, UserID: user.ID, Key: "quota-only-openai", Status: service.StatusActive,
+		User: user, Group: &service.Group{ID: 2, Platform: service.PlatformOpenAI},
+	}
+	apiKeyRepo := &stubApiKeyRepo{getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+		if key != apiKey.Key {
+			return nil, service.ErrAPIKeyNotFound
+		}
+		clone := *apiKey
+		userClone := *user
+		clone.User = &userClone
+		return &clone, nil
+	}}
+
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	cfg.Gateway.OpenAIAdvancedQuota.Enabled = true
+	cfg.Gateway.OpenAIAdvancedQuota.DisableBalanceBilling = true
+	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+	router := newAuthTestRouter(apiKeyService, nil, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	req.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
 func TestAPIKeyAuthAllowsAdminWithExhaustedBalance(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

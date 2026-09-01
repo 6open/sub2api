@@ -749,7 +749,7 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 		if err := s.checkSubscriptionEligibility(ctx, user.ID, group, subscription); err != nil {
 			return err
 		}
-	} else if !user.IsAdmin() {
+	} else if !user.IsAdmin() && !OpenAIAdvancedQuotaDisablesBalanceBilling(s.cfg, user, platform) {
 		if err := s.checkBalanceEligibility(ctx, user.ID); err != nil {
 			return err
 		}

@@ -51,6 +51,14 @@ func OpenAIAdvancedQuotaEnabledFor(cfg *config.Config, user *User, platform stri
 		!OpenAIAdvancedQuotaModelExempt(cfg, models...)
 }
 
+// OpenAIAdvancedQuotaDisablesBalanceBilling reports whether OpenAI traffic is
+// governed by the independent quota ledger instead of the legacy paid balance.
+func OpenAIAdvancedQuotaDisablesBalanceBilling(cfg *config.Config, user *User, platform string) bool {
+	return cfg != nil && cfg.Gateway.OpenAIAdvancedQuota.Enabled &&
+		cfg.Gateway.OpenAIAdvancedQuota.DisableBalanceBilling &&
+		user != nil && !user.IsAdmin() && platform == PlatformOpenAI
+}
+
 func RewriteOpenAIReasoningEffort(body []byte, effort string) ([]byte, bool, error) {
 	effort = strings.ToLower(strings.TrimSpace(effort))
 	if effort == "" {

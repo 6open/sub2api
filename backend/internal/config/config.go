@@ -1036,10 +1036,14 @@ type GatewayConfig struct {
 // GatewayOpenAIAdvancedQuotaConfig controls the independent weekly quota for
 // high/xhigh/max requests. Usage is measured using pre-multiplier token cost.
 type GatewayOpenAIAdvancedQuotaConfig struct {
-	Enabled             bool    `mapstructure:"enabled"`
-	WeeklyLimitUSD      float64 `mapstructure:"weekly_limit_usd"`
-	FallbackEffort      string  `mapstructure:"fallback_effort"`
-	ExemptModelKeywords string  `mapstructure:"exempt_model_keywords"`
+	Enabled bool `mapstructure:"enabled"`
+	// DisableBalanceBilling makes the OpenAI advanced-quota ledger the billing
+	// authority for OpenAI traffic. It is intended for non-paid deployments such
+	// as Migo: legacy user balances are neither checked nor deducted.
+	DisableBalanceBilling bool    `mapstructure:"disable_balance_billing"`
+	WeeklyLimitUSD        float64 `mapstructure:"weekly_limit_usd"`
+	FallbackEffort        string  `mapstructure:"fallback_effort"`
+	ExemptModelKeywords   string  `mapstructure:"exempt_model_keywords"`
 }
 
 // GatewayGrokConfig holds Grok-specific gateway scheduling knobs.
@@ -2370,6 +2374,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_http2.fallback_window_seconds", 60)
 	viper.SetDefault("gateway.openai_http2.fallback_ttl_seconds", 600)
 	viper.SetDefault("gateway.openai_advanced_quota.enabled", false)
+	viper.SetDefault("gateway.openai_advanced_quota.disable_balance_billing", false)
 	viper.SetDefault("gateway.openai_advanced_quota.weekly_limit_usd", 50.0)
 	viper.SetDefault("gateway.openai_advanced_quota.fallback_effort", "medium")
 	viper.SetDefault("gateway.openai_advanced_quota.exempt_model_keywords", "terra,luna")

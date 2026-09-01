@@ -26,6 +26,17 @@ func TestOpenAIAdvancedQuotaEnabledFor(t *testing.T) {
 	require.False(t, OpenAIAdvancedQuotaEnabledFor(cfg, user, PlatformOpenAI, "gpt-5.6-luna"))
 }
 
+func TestOpenAIAdvancedQuotaDisablesBalanceBilling(t *testing.T) {
+	cfg := advancedQuotaTestConfig()
+	cfg.Gateway.OpenAIAdvancedQuota.DisableBalanceBilling = true
+	user := &User{ID: 1, Role: RoleUser}
+	require.True(t, OpenAIAdvancedQuotaDisablesBalanceBilling(cfg, user, PlatformOpenAI))
+	require.False(t, OpenAIAdvancedQuotaDisablesBalanceBilling(cfg, user, PlatformGrok))
+	require.False(t, OpenAIAdvancedQuotaDisablesBalanceBilling(cfg, &User{ID: 2, Role: RoleAdmin}, PlatformOpenAI))
+	cfg.Gateway.OpenAIAdvancedQuota.DisableBalanceBilling = false
+	require.False(t, OpenAIAdvancedQuotaDisablesBalanceBilling(cfg, user, PlatformOpenAI))
+}
+
 func TestRewriteOpenAIReasoningEffort(t *testing.T) {
 	for _, tt := range []struct{ name, body, path string }{
 		{name: "nested", body: `{"reasoning":{"effort":"max","summary":"auto"}}`, path: "reasoning.effort"},
