@@ -34,7 +34,7 @@ const (
 
 // OpenAIAdvancedWeeklyResetCredits is replenished with the advanced quota's
 // natural weekly window. Each reset restores the full weekly allowance.
-const OpenAIAdvancedWeeklyResetCredits = 2
+const OpenAIAdvancedWeeklyResetCredits = 1
 
 // Account mode constants 区分国产供应商的「按量付费（余额）」与「Coding Plan」两种接入方式。
 // 存储于 credentials["account_mode"]，决定 base_url 预设与额度监控方式。

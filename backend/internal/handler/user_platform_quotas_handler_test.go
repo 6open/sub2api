@@ -161,7 +161,7 @@ func TestResetMyOpenAIAdvancedQuota_ConsumesOnceAndReturnsFullQuota(t *testing.T
 		WeeklyLimitUSD:          &limit,
 		WeeklyUsageUSD:          12.5,
 		WeeklyWindowStart:       &weekStart,
-		SelfServiceResetCredits: 2,
+		SelfServiceResetCredits: service.OpenAIAdvancedWeeklyResetCredits,
 	}}}
 	cache := &fakeUserQuotaCache{}
 	h := &UserHandler{userPlatformQuotaRepo: repo, userPlatformQuotaCache: cache}
@@ -182,7 +182,7 @@ func TestResetMyOpenAIAdvancedQuota_ConsumesOnceAndReturnsFullQuota(t *testing.T
 	}
 	body := w.Body.String()
 	if !strings.Contains(body, `"weekly_usage_usd":0`) ||
-		!strings.Contains(body, `"self_service_reset_credits":1`) {
+		!strings.Contains(body, `"self_service_reset_credits":0`) {
 		t.Fatalf("unexpected reset response: %s", body)
 	}
 }

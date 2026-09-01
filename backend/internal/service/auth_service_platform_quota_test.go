@@ -86,7 +86,7 @@ func TestSnapshotPlatformQuotaDefaults_PassesToRepoBulkInsert(t *testing.T) {
 	}
 }
 
-func TestSnapshotPlatformQuotaDefaults_AdvancedQuotaStartsWithTwoResets(t *testing.T) {
+func TestSnapshotPlatformQuotaDefaults_AdvancedQuotaStartsWithConfiguredResets(t *testing.T) {
 	fakeRepo := &fakeInsertRecorder{}
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIAdvancedQuota.Enabled = true
