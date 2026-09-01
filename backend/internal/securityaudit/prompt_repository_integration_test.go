@@ -43,7 +43,7 @@ func openPromptAuditIntegrationDB(t *testing.T) *sql.DB {
 		);
 	`)
 	require.NoError(t, err)
-	for _, name := range []string{"181_prompt_audit.sql", "182_prompt_audit_full_prompt.sql"} {
+	for _, name := range []string{"181_prompt_audit.sql", "182_prompt_audit_full_prompt.sql", "234_encrypt_prompt_audit_full_prompt.sql"} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		require.NoError(t, err)
 		// The migration runner can retry an interrupted deployment; the migration
@@ -153,7 +153,7 @@ func TestPromptAuditMigrationSchemaAndLeakageGate(t *testing.T) {
 
 func TestPromptAuditDatabasePersistsFullPromptOnEventsOnly(t *testing.T) {
 	db := openPromptAuditIntegrationDB(t)
-	repo := NewPostgreSQLRepository(db)
+	repo := NewPostgreSQLRepository(db, promptAuditTestEncryptor(t))
 	ctx := context.Background()
 	const promptCanary = "PROMPT_AUDIT_CANARY_SECRET_DO_NOT_PERSIST"
 	request := Request{
@@ -167,16 +167,17 @@ func TestPromptAuditDatabasePersistsFullPromptOnEventsOnly(t *testing.T) {
 	require.Contains(t, snapshot.FullPrompt, promptCanary)
 	event, err := repo.RecordBlocking(ctx, snapshot.Redacted(), 1, integrationResult(EventCritical), true)
 	require.NoError(t, err)
-	// The event intentionally retains the full prompt for admin review; the
-	// redacted preview and transient job row still never contain it.
+	// Admin reads are decrypted in memory; PostgreSQL stores ciphertext only.
 	adminJSON, err := json.Marshal(event)
 	require.NoError(t, err)
 	require.Contains(t, string(adminJSON), promptCanary)
 	require.NotContains(t, event.Snapshot.RedactedPreview, promptCanary)
 
-	var storedFullPrompt string
-	require.NoError(t, db.QueryRow(`SELECT full_prompt FROM prompt_audit_events WHERE id=$1`, event.ID).Scan(&storedFullPrompt))
-	require.Contains(t, storedFullPrompt, promptCanary)
+	var storedFullPrompt, storedCiphertext string
+	require.NoError(t, db.QueryRow(`SELECT full_prompt,full_prompt_ciphertext FROM prompt_audit_events WHERE id=$1`, event.ID).Scan(&storedFullPrompt, &storedCiphertext))
+	require.Empty(t, storedFullPrompt)
+	require.NotEmpty(t, storedCiphertext)
+	require.NotContains(t, storedCiphertext, promptCanary)
 
 	detail, err := repo.GetEvent(ctx, event.ID)
 	require.NoError(t, err)
@@ -198,9 +199,41 @@ func TestPromptAuditDatabasePersistsFullPromptOnEventsOnly(t *testing.T) {
 	require.LessOrEqual(t, len([]rune(message)), 160)
 }
 
+func TestPromptAuditLegacyBackfillAndRetention(t *testing.T) {
+	db := openPromptAuditIntegrationDB(t)
+	repo := NewPostgreSQLRepository(db, promptAuditTestEncryptor(t))
+	ctx := context.Background()
+
+	var jobID, eventID int64
+	require.NoError(t, db.QueryRow(`INSERT INTO prompt_audit_jobs(status,redacted_preview) VALUES ('done','legacy***') RETURNING id`).Scan(&jobID))
+	require.NoError(t, db.QueryRow(`INSERT INTO prompt_audit_events(job_id,decision,risk_level,action,redacted_preview,full_prompt,created_at)
+		VALUES ($1,'critical','critical','Block','legacy***','legacy secret',NOW()-INTERVAL '8 days') RETURNING id`, jobID).Scan(&eventID))
+
+	migrated, err := repo.MigrateLegacyFullPrompts(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), migrated)
+	var plaintext, ciphertext string
+	require.NoError(t, db.QueryRow(`SELECT full_prompt,full_prompt_ciphertext FROM prompt_audit_events WHERE id=$1`, eventID).Scan(&plaintext, &ciphertext))
+	require.Empty(t, plaintext)
+	require.NotEmpty(t, ciphertext)
+	require.NotContains(t, ciphertext, "legacy secret")
+
+	detail, err := repo.GetEvent(ctx, eventID)
+	require.NoError(t, err)
+	require.Equal(t, "legacy secret", detail.Snapshot.FullPrompt)
+
+	cleared, err := repo.ClearExpiredFullPrompts(ctx, time.Now().Add(-7*24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, int64(1), cleared)
+	detail, err = repo.GetEvent(ctx, eventID)
+	require.NoError(t, err)
+	require.Empty(t, detail.Snapshot.FullPrompt)
+	require.Equal(t, "legacy***", detail.Snapshot.RedactedPreview)
+}
+
 func TestPromptAuditRepositoryAdmissionClaimFencingAndEventTransaction(t *testing.T) {
 	db := openPromptAuditIntegrationDB(t)
-	repo := NewPostgreSQLRepository(db)
+	repo := NewPostgreSQLRepository(db, promptAuditTestEncryptor(t))
 	ctx := context.Background()
 
 	start := make(chan struct{})
@@ -297,7 +330,7 @@ func TestPromptAuditRepositoryAdmissionClaimFencingAndEventTransaction(t *testin
 
 func TestPromptAuditRepositoryForeignKeysFiltersAndStableIdentitySnapshots(t *testing.T) {
 	db := openPromptAuditIntegrationDB(t)
-	repo := NewPostgreSQLRepository(db)
+	repo := NewPostgreSQLRepository(db, promptAuditTestEncryptor(t))
 	ctx := context.Background()
 	userID := insertIdentity(t, db, "users")
 	apiKeyID := insertIdentity(t, db, "api_keys")
@@ -345,7 +378,7 @@ func TestPromptAuditRepositoryForeignKeysFiltersAndStableIdentitySnapshots(t *te
 
 func TestPromptAuditRepositoryHighWaterAndSafeDeletion(t *testing.T) {
 	db := openPromptAuditIntegrationDB(t)
-	repo := NewPostgreSQLRepository(db)
+	repo := NewPostgreSQLRepository(db, promptAuditTestEncryptor(t))
 	ctx := context.Background()
 	first, err := repo.RecordBlocking(ctx, integrationSnapshot("first"), 1, integrationResult(EventCritical), true)
 	require.NoError(t, err)
@@ -397,7 +430,7 @@ func TestPromptAuditRepositoryHighWaterAndSafeDeletion(t *testing.T) {
 
 func TestPromptAuditServiceConfirmationKeepsPostPreviewEventsAndConcurrentDeletesAreSafe(t *testing.T) {
 	db := openPromptAuditIntegrationDB(t)
-	repo := NewPostgreSQLRepository(db)
+	repo := NewPostgreSQLRepository(db, promptAuditTestEncryptor(t))
 	ctx := context.Background()
 	now := time.Now().UTC()
 	start, end := now.Add(-time.Hour), now.Add(time.Hour)

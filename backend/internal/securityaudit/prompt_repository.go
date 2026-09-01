@@ -78,12 +78,105 @@ type JobRepository interface {
 }
 
 type PostgreSQLRepository struct {
-	db    *sql.DB
-	clock Clock
+	db        *sql.DB
+	clock     Clock
+	encryptor SecretEncryptor
 }
 
-func NewPostgreSQLRepository(db *sql.DB) *PostgreSQLRepository {
-	return &PostgreSQLRepository{db: db, clock: realClock{}}
+func NewPostgreSQLRepository(db *sql.DB, encryptor SecretEncryptor) *PostgreSQLRepository {
+	return &PostgreSQLRepository{db: db, clock: realClock{}, encryptor: encryptor}
+}
+
+func (r *PostgreSQLRepository) encryptSnapshot(snapshot PromptSnapshot) (PromptSnapshot, error) {
+	if snapshot.FullPrompt == "" {
+		return snapshot, nil
+	}
+	if r == nil || r.encryptor == nil {
+		return PromptSnapshot{}, errors.New("prompt audit encryptor unavailable")
+	}
+	ciphertext, err := r.encryptor.Encrypt(snapshot.FullPrompt)
+	if err != nil {
+		return PromptSnapshot{}, fmt.Errorf("encrypt prompt audit full prompt: %w", err)
+	}
+	snapshot.FullPrompt = ""
+	snapshot.FullPromptCiphertext = ciphertext
+	return snapshot, nil
+}
+
+func (r *PostgreSQLRepository) decryptEvent(event *Event) error {
+	if event == nil || event.Snapshot.FullPromptCiphertext == "" {
+		return nil
+	}
+	if r == nil || r.encryptor == nil {
+		return errors.New("prompt audit encryptor unavailable")
+	}
+	plaintext, err := r.encryptor.Decrypt(event.Snapshot.FullPromptCiphertext)
+	if err != nil {
+		return fmt.Errorf("decrypt prompt audit full prompt: %w", err)
+	}
+	event.Snapshot.FullPrompt = plaintext
+	event.Snapshot.FullPromptCiphertext = ""
+	return nil
+}
+
+// MigrateLegacyFullPrompts encrypts legacy plaintext rows in bounded batches.
+func (r *PostgreSQLRepository) MigrateLegacyFullPrompts(ctx context.Context) (int64, error) {
+	if r == nil || r.db == nil || r.encryptor == nil {
+		return 0, errors.New("prompt audit encryption dependencies unavailable")
+	}
+	var migrated int64
+	for {
+		rows, err := r.db.QueryContext(ctx, `SELECT id,full_prompt FROM prompt_audit_events
+			WHERE full_prompt<>'' AND full_prompt_ciphertext='' ORDER BY id LIMIT 100`)
+		if err != nil {
+			return migrated, err
+		}
+		type legacyRow struct {
+			id     int64
+			prompt string
+		}
+		batch := make([]legacyRow, 0, 100)
+		for rows.Next() {
+			var item legacyRow
+			if err := rows.Scan(&item.id, &item.prompt); err != nil {
+				_ = rows.Close()
+				return migrated, err
+			}
+			batch = append(batch, item)
+		}
+		if err := rows.Close(); err != nil {
+			return migrated, err
+		}
+		if len(batch) == 0 {
+			return migrated, nil
+		}
+		for _, item := range batch {
+			ciphertext, err := r.encryptor.Encrypt(item.prompt)
+			if err != nil {
+				return migrated, fmt.Errorf("encrypt legacy prompt audit event %d: %w", item.id, err)
+			}
+			result, err := r.db.ExecContext(ctx, `UPDATE prompt_audit_events
+				SET full_prompt_ciphertext=$1,full_prompt='' WHERE id=$2 AND full_prompt<>'' AND full_prompt_ciphertext=''`, ciphertext, item.id)
+			if err != nil {
+				return migrated, err
+			}
+			count, _ := result.RowsAffected()
+			migrated += count
+		}
+	}
+}
+
+func (r *PostgreSQLRepository) ClearExpiredFullPrompts(ctx context.Context, cutoff time.Time) (int64, error) {
+	if r == nil || r.db == nil {
+		return 0, errors.New("prompt audit database unavailable")
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE prompt_audit_events
+		SET full_prompt='',full_prompt_ciphertext=''
+		WHERE created_at<$1 AND (full_prompt<>'' OR full_prompt_ciphertext<>'')`, cutoff.UTC())
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (r *PostgreSQLRepository) CreateStagingWithCapacity(ctx context.Context, snapshot PromptSnapshot, configVersion int64, maxAttempts, capacity int) (*Job, error) {
@@ -187,12 +280,19 @@ func (r *PostgreSQLRepository) Complete(ctx context.Context, job *Job, result *N
 	}
 	var event *Event
 	if shouldStorePromptAuditEvent(result.Decision, storePassEvents) {
-		event, err = insertEvent(ctx, tx, job.ID, job.Snapshot.Redacted(), job.ConfigVersion, result)
+		encrypted, encryptErr := r.encryptSnapshot(job.Snapshot.Redacted())
+		if encryptErr != nil {
+			return nil, encryptErr
+		}
+		event, err = insertEvent(ctx, tx, job.ID, encrypted, job.ConfigVersion, result)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	if err := r.decryptEvent(event); err != nil {
 		return nil, err
 	}
 	return event, nil
@@ -293,12 +393,19 @@ func (r *PostgreSQLRepository) RecordBlocking(ctx context.Context, snapshot Prom
 	}
 	var event *Event
 	if shouldStorePromptAuditEvent(result.Decision, storePassEvents) {
-		event, err = insertEvent(ctx, tx, job.ID, snapshot.Redacted(), configVersion, result)
+		encrypted, encryptErr := r.encryptSnapshot(snapshot.Redacted())
+		if encryptErr != nil {
+			return nil, encryptErr
+		}
+		event, err = insertEvent(ctx, tx, job.ID, encrypted, configVersion, result)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	if err := r.decryptEvent(event); err != nil {
 		return nil, err
 	}
 	return event, nil
@@ -349,9 +456,9 @@ func insertEvent(ctx context.Context, queryer sqlQueryer, jobID int64, snapshot 
 			group_id,group_name,provider,endpoint,protocol,model,prompt_hash,redacted_preview,stage,
 			decision,risk_level,action,categories,matched_scanners,scanner_scores,scanner_evidence,
 			scanner_backend,scanner_version,guard_endpoint_id,policy_id,policy_version,config_version,chunk_total,latency_ms,
-			full_prompt
+			full_prompt,full_prompt_ciphertext
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-			$20::jsonb,$21::jsonb,$22::jsonb,$23::jsonb,$24,$25,$26,$27,$28,$29,$30,$31,$32)
+			$20::jsonb,$21::jsonb,$22::jsonb,$23::jsonb,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
 		RETURNING `+eventDetailColumns("prompt_audit_events"),
 		jobID, snapshot.RequestID, nullableID(snapshot.UserID), snapshot.UsernameSnapshot, snapshot.UserEmailSnapshot,
 		nullableID(snapshot.APIKeyID), snapshot.APIKeyNameSnapshot, snapshot.GroupID, snapshot.GroupName,
@@ -359,7 +466,7 @@ func insertEvent(ctx context.Context, queryer sqlQueryer, jobID int64, snapshot 
 		snapshot.RedactedPreview, normalizeStage(snapshot.Stage), string(result.Decision), string(result.RiskLevel),
 		string(result.Action), categories, matched, scores, evidenceJSON, result.ScannerBackend, result.ScannerVersion,
 		result.GuardEndpointID, result.PolicyID, result.PolicyVersion, configVersion, result.ChunkTotal, result.LatencyMS,
-		snapshot.FullPrompt)
+		snapshot.FullPrompt, snapshot.FullPromptCiphertext)
 	return scanEvent(row, true)
 }
 

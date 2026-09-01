@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"sync"
 	"time"
 )
+
+const promptAuditFullPromptRetention = 7 * 24 * time.Hour
 
 type PromptService struct {
 	config    ConfigStore
@@ -23,13 +26,14 @@ type PromptService struct {
 	metrics   *AtomicMetrics
 	clock     Clock
 
-	lifecycleMu  sync.Mutex
-	cancel       context.CancelFunc
-	background   context.Context
-	enqueueWG    sync.WaitGroup
-	enqueueSlots chan struct{}
-	probeMu      sync.RWMutex
-	probes       map[string]ProbeResult
+	lifecycleMu   sync.Mutex
+	cancel        context.CancelFunc
+	background    context.Context
+	enqueueWG     sync.WaitGroup
+	maintenanceWG sync.WaitGroup
+	enqueueSlots  chan struct{}
+	probeMu       sync.RWMutex
+	probes        map[string]ProbeResult
 }
 
 func NewPromptService(
@@ -62,6 +66,18 @@ func (s *PromptService) Start(ctx context.Context) error {
 	s.background, s.cancel = background, cancel
 	s.lifecycleMu.Unlock()
 	configErr := s.config.Start(background)
+	if s.repo != nil && s.repo.db != nil {
+		if _, err := s.repo.MigrateLegacyFullPrompts(background); err != nil {
+			cancel()
+			return fmt.Errorf("migrate prompt audit full prompts: %w", err)
+		}
+		if _, err := s.repo.ClearExpiredFullPrompts(background, s.clock.Now().Add(-promptAuditFullPromptRetention)); err != nil {
+			cancel()
+			return fmt.Errorf("clear expired prompt audit full prompts: %w", err)
+		}
+		s.maintenanceWG.Add(1)
+		go s.fullPromptRetentionLoop(background)
+	}
 	workerErr := s.runner.Start(background)
 	return errors.Join(configErr, workerErr)
 }
@@ -77,6 +93,7 @@ func (s *PromptService) Shutdown(ctx context.Context) error {
 	if cancel != nil {
 		cancel()
 	}
+	s.maintenanceWG.Wait()
 	var workerErr error
 	if s.runner != nil {
 		workerErr = s.runner.Shutdown(ctx)
@@ -98,6 +115,22 @@ func (s *PromptService) Shutdown(ctx context.Context) error {
 		return workerErr
 	}
 	return configErr
+}
+
+func (s *PromptService) fullPromptRetentionLoop(ctx context.Context) {
+	defer s.maintenanceWG.Done()
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := s.repo.ClearExpiredFullPrompts(ctx, s.clock.Now().Add(-promptAuditFullPromptRetention)); err != nil && !errors.Is(err, context.Canceled) {
+				LogWarn(EventProcessFailed, map[string]any{"status": "retention_cleanup_failed", "error_code": "full_prompt_cleanup_failed"})
+			}
+		}
+	}
 }
 
 func (s *PromptService) EffectiveMode() Mode {
