@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1.7
+
+FROM golang:1.26.6-alpine AS test
+
+RUN apk add --no-cache git ca-certificates tzdata
+WORKDIR /src/backend
+
+COPY backend/go.mod backend/go.sum ./
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
+    go mod download
+
+COPY backend/ ./
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
+    go test -tags=unit ./internal/service ./internal/repository ./internal/handler \
+      -run 'Test(OpenAIAdvancedQuota|RewriteOpenAIReasoningEffort|ResetMyOpenAIAdvancedQuota|LazyZeroQuotaForResponse|GenericAdapter|NormalizeOpenAIReasoningEffort|HandleSSEToJSON_Compact|OpenAIResponsesWebSocket_PassthroughUsageLogPersistsUserAgentAndReasoningEffort|OpenAIReasoningEffortPolicyForCompositeTarget|APIKeyService_RejectsV15AuthSnapshotWithoutReasoningEffortPolicy)' \
+      -count=1
+
+FROM test AS integration-runner
+
+RUN apk add --no-cache docker-cli
+
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
+    go test -tags=integration -c ./internal/repository -o /usr/local/bin/repository-integration.test
+
+ENTRYPOINT ["/usr/local/bin/repository-integration.test"]
+
+# Fast local rebuild path after integration-runner has been built once. It
+# reuses the installed Docker CLI and module cache without contacting apk.
+FROM sub2api:migo-quota-weekly-integration-test AS integration-rebuild
+
+COPY backend/ ./
+
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
+    go test -tags=integration -c ./internal/repository -o /usr/local/bin/repository-integration.test
+
+ENTRYPOINT ["/usr/local/bin/repository-integration.test"]

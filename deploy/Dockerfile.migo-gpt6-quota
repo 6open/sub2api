@@ -1,0 +1,9 @@
+FROM golang:1.26.6-alpine AS build
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GOSUMDB=sum.golang.google.cn
+WORKDIR /src/backend
+COPY backend/ ./
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build go test -tags=unit ./internal/service ./internal/handler -run 'TestOpenAIAdvancedQuota|TestRewriteOpenAIReasoningEffort|TestGPT6AdvancedQuota' -count=1
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build CGO_ENABLED=0 go build -buildvcs=false -tags embed -ldflags="-s -w -X main.Version=0.1.178 -X main.Commit=migo-gpt6-quota-20260905" -o /out/sub2api ./cmd/server
+FROM sub2api:migo-v0.1.178-prompt-privacy-20260901
+COPY --from=build --chown=sub2api:sub2api /out/sub2api /app/sub2api
