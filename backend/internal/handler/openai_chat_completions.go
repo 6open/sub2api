@@ -102,6 +102,12 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.openAISecurityAuditError(c, decision)
 		return
 	}
+	if next, model, err := h.applyGPT6AdvancedQuota(c, apiKey, body, reqModel); err != nil {
+		h.errorResponse(c, http.StatusForbidden, "advanced_quota_error", err.Error())
+		return
+	} else {
+		body, reqModel = next, model
+	}
 	body = h.applyOpenAIAdvancedQuotaPolicy(c, reqLog, apiKey, body, reqModel)
 	if h.rejectIfCyberSessionBlocked(c, apiKey, body, reqModel, cyberBlockFormatChat) {
 		return

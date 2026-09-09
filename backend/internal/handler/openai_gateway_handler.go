@@ -376,6 +376,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.openAISecurityAuditError(c, decision)
 		return
 	}
+	if next, model, err := h.applyGPT6AdvancedQuota(c, apiKey, body, reqModel); err != nil {
+		h.errorResponse(c, http.StatusForbidden, "advanced_quota_error", err.Error())
+		return
+	} else {
+		body, reqModel = next, model
+	}
 	body = h.applyOpenAIAdvancedQuotaPolicy(c, reqLog, apiKey, body, reqModel)
 
 	// 使用 IsExplicitImageGenerationIntent 排除被动 image_gen namespace 声明。
@@ -1789,6 +1795,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision))
 		return
 	}
+	if next, model, err := h.applyGPT6AdvancedQuota(c, apiKey, firstMessage, reqModel); err != nil {
+		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, err.Error())
+		return
+	} else {
+		firstMessage, reqModel = next, model
+	}
 	firstMessage = h.applyOpenAIAdvancedQuotaPolicy(c, reqLog, apiKey, firstMessage, reqModel)
 
 	imageIntent := service.IsExplicitImageGenerationIntent("/v1/responses", reqModel, firstMessage)
@@ -2099,6 +2111,13 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// passthrough 没有 BeforeTurn 时，AfterTurn 回退到 TurnStarted 的所属 turn 时刻。
 		var turnPricing openAIWSTurnPricing
 		hooks := &service.OpenAIWSIngressHooks{
+			TransformRequest: func(payload []byte, model string) ([]byte, string, error) {
+				next, effective, err := h.applyGPT6AdvancedQuota(c, apiKey, payload, model)
+				if err != nil {
+					return nil, model, service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, err.Error(), err)
+				}
+				return next, effective, nil
+			},
 			ClientLifecycleContext:  clientLifecycleCtx,
 			InitialRequestModel:     reqModel,
 			InitialTurnStartedAt:    firstTurnStartedAt,

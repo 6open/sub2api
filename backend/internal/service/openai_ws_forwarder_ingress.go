@@ -190,6 +190,20 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", errors.New("invalid json"))
 		}
 
+		if hooks != nil && hooks.TransformRequest != nil {
+			model := gjson.GetBytes(trimmed, "model").String()
+			if model == "" {
+				model = ingressSessionOriginalModel
+			}
+			if model == "" {
+				model = hooks.InitialRequestModel
+			}
+			next, _, err := hooks.TransformRequest(trimmed, model)
+			if err != nil {
+				return openAIWSClientPayload{}, err
+			}
+			trimmed = next
+		}
 		values := gjson.GetManyBytes(trimmed, "type", "model", "prompt_cache_key", "previous_response_id")
 		eventType := strings.TrimSpace(values[0].String())
 		normalized := trimmed

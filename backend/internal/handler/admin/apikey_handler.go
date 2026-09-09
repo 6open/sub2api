@@ -74,11 +74,12 @@ func (h *AdminAPIKeyHandler) CreateForUser(c *gin.Context) {
 	}
 
 	input := service.CreateAPIKeyRequest{
-		Name:          req.Name,
-		GroupID:       req.GroupID,
-		IPWhitelist:   req.IPWhitelist,
-		IPBlacklist:   req.IPBlacklist,
-		ExpiresInDays: req.ExpiresInDays,
+		Name:              req.Name,
+		GroupID:           req.GroupID,
+		IPWhitelist:       req.IPWhitelist,
+		IPBlacklist:       req.IPBlacklist,
+		ExpiresInDays:     req.ExpiresInDays,
+		AdminManagedQuota: true,
 	}
 	if req.Quota != nil {
 		input.Quota = *req.Quota

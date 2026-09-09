@@ -63,3 +63,15 @@ func TestOpenAIAdvancedQuotaUsageCost(t *testing.T) {
 	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-luna", "max", cost, 0.2))
 	require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, user, PlatformOpenAI, "gpt-5.6-sol", "high", nil, 0.2))
 }
+
+func TestOpenAIAdvancedQuotaGPT6AllEfforts(t *testing.T) {
+	cfg := advancedQuotaTestConfig()
+	cost := &CostBreakdown{TotalCost: 10}
+	for _, model := range []string{"gpt-6-astra", "openai/gpt-6-astra"} {
+		for _, effort := range []string{"", "none", "low", "medium", "high", "xhigh", "max", "ultra"} {
+			require.Equal(t, 2.0, OpenAIAdvancedQuotaUsageCost(cfg, &User{Role: RoleUser}, PlatformOpenAI, model, effort, cost, 0.2))
+			require.Zero(t, OpenAIAdvancedQuotaUsageCost(cfg, &User{Role: RoleAdmin}, PlatformOpenAI, model, effort, cost, 0.2))
+		}
+	}
+	require.False(t, IsOpenAIAlwaysAdvancedModel("gpt-5.6-sol"))
+}

@@ -229,10 +229,11 @@ type CreateAPIKeyRequest struct {
 	ExpiresInDays *int    `json:"expires_in_days"` // Days until expiry (nil = never expires)
 
 	// Rate limit fields (0 = unlimited)
-	RateLimit5h      float64 `json:"rate_limit_5h"`
-	RateLimit1d      float64 `json:"rate_limit_1d"`
-	RateLimit7d      float64 `json:"rate_limit_7d"`
-	OpenWebUIDefault bool    `json:"-"`
+	RateLimit5h       float64 `json:"rate_limit_5h"`
+	RateLimit1d       float64 `json:"rate_limit_1d"`
+	RateLimit7d       float64 `json:"rate_limit_7d"`
+	OpenWebUIDefault  bool    `json:"-"`
+	AdminManagedQuota bool    `json:"-"`
 }
 
 // UpdateAPIKeyRequest 更新API Key请求
@@ -493,6 +494,7 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	}
 
 	// 验证分组权限（如果指定了分组）
+	var selectedGroup *Group
 	if req.GroupID != nil {
 		group, err := s.groupRepo.GetByID(ctx, *req.GroupID)
 		if err != nil {
@@ -503,6 +505,14 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		if !s.canUserBindGroup(ctx, user, group) {
 			return nil, ErrGroupNotAllowed
 		}
+		selectedGroup = group
+	}
+
+	// Migo 的 OpenAI 流量由独立高级额度账本管理。用户自助创建的 Key
+	// 不得再叠加付费站式总额度，否则会在高级额度之前错误返回 429。
+	// 管理员创建的公共服务 Key 仍可显式设置隔离额度。
+	if !req.AdminManagedQuota && userManagedAPIKeyQuotaDisabled(s.cfg, user, selectedGroup) {
+		req.Quota = 0
 	}
 
 	var key string
@@ -902,6 +912,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	originalStatus := apiKey.Status
 
 	// 更新字段
+	effectiveGroup := apiKey.Group
 	if req.Name != nil {
 		apiKey.Name = html.EscapeString(*req.Name)
 		fields.Name = true
@@ -924,6 +935,8 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		}
 
 		apiKey.GroupID = req.GroupID
+		apiKey.Group = group
+		effectiveGroup = group
 		fields.GroupID = true
 	}
 
@@ -938,6 +951,10 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 
 	// Update quota fields
 	if req.Quota != nil {
+		if userManagedAPIKeyQuotaDisabled(s.cfg, apiKey.User, effectiveGroup) {
+			unlimited := 0.0
+			req.Quota = &unlimited
+		}
 		apiKey.Quota = *req.Quota
 		fields.Quota = true
 		// If quota now has room, or is changed to unlimited, reactivate exhausted keys.
@@ -1021,6 +1038,10 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	}
 
 	return apiKey, nil
+}
+
+func userManagedAPIKeyQuotaDisabled(cfg *config.Config, user *User, group *Group) bool {
+	return group != nil && OpenAIAdvancedQuotaDisablesBalanceBilling(cfg, user, group.Platform)
 }
 
 // Delete 删除API Key

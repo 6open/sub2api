@@ -209,7 +209,7 @@
                 </span>
               </div>
               <!-- Quota progress (if quota is set) -->
-              <div v-if="row.quota > 0" class="mt-1.5">
+              <div v-if="publicSettings?.payment_enabled && row.quota > 0" class="mt-1.5">
                 <div class="flex items-center gap-1.5">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('keys.quota') }}:</span>
                   <span :class="[
@@ -617,7 +617,7 @@
         </div>
 
         <!-- Quota Limit Section -->
-        <div class="space-y-3">
+        <div v-if="publicSettings?.payment_enabled" class="space-y-3">
           <label class="input-label">{{ t('keys.quotaLimit') }}</label>
           <!-- Switch commented out - always show input, 0 = unlimited
           <div class="flex items-center justify-between">
@@ -1723,7 +1723,9 @@ const handleSubmit = async () => {
   const ipBlacklist = formData.value.enable_ip_restriction ? parseIPList(formData.value.ip_blacklist) : []
 
   // Calculate quota value (null/empty/0 = unlimited, stored as 0)
-  const quota = formData.value.quota && formData.value.quota > 0 ? formData.value.quota : 0
+  const quota = publicSettings.value?.payment_enabled && formData.value.quota && formData.value.quota > 0
+    ? formData.value.quota
+    : 0
 
   // Calculate expiration
   let expiresInDays: number | undefined

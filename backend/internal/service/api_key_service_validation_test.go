@@ -6,6 +6,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,4 +44,20 @@ func TestValidateUpdateAPIKeyRequestNumericLimits(t *testing.T) {
 	} {
 		require.Error(t, validateUpdateAPIKeyRequest(req))
 	}
+}
+
+func TestUserManagedAPIKeyQuotaDisabled(t *testing.T) {
+	cfg := &config.Config{Gateway: config.GatewayConfig{OpenAIAdvancedQuota: config.GatewayOpenAIAdvancedQuotaConfig{
+		Enabled:               true,
+		DisableBalanceBilling: true,
+		WeeklyLimitUSD:        100,
+	}}}
+	user := &User{Role: RoleUser}
+	admin := &User{Role: RoleAdmin}
+
+	require.True(t, userManagedAPIKeyQuotaDisabled(cfg, user, &Group{Platform: PlatformOpenAI}))
+	require.False(t, userManagedAPIKeyQuotaDisabled(cfg, admin, &Group{Platform: PlatformOpenAI}))
+	require.False(t, userManagedAPIKeyQuotaDisabled(cfg, user, &Group{Platform: PlatformAnthropic}))
+	require.False(t, userManagedAPIKeyQuotaDisabled(&config.Config{}, user, &Group{Platform: PlatformOpenAI}))
+	require.False(t, userManagedAPIKeyQuotaDisabled(cfg, user, nil))
 }

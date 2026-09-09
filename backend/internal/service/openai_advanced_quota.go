@@ -18,6 +18,13 @@ func IsOpenAIAdvancedReasoningEffort(effort string) bool {
 	}
 }
 
+// GPT-6 consumes the advanced ledger even when effort is omitted or low.
+func IsOpenAIAlwaysAdvancedModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	model = strings.TrimPrefix(model, "openai/")
+	return model == "gpt-6" || model == "gpt6" || strings.HasPrefix(model, "gpt-6-")
+}
+
 func ExtractOpenAIReasoningEffortForQuota(body []byte, modelCandidates ...string) string {
 	effort := extractOpenAIReasoningEffortFromBody(body, modelCandidates...)
 	if effort == nil {
@@ -83,7 +90,7 @@ func RewriteOpenAIReasoningEffort(body []byte, effort string) ([]byte, bool, err
 }
 
 func OpenAIAdvancedQuotaUsageCost(cfg *config.Config, user *User, platform, model, effort string, cost *CostBreakdown, multiplier float64) float64 {
-	if cost == nil || cost.TotalCost <= 0 || !IsOpenAIAdvancedReasoningEffort(effort) ||
+	if cost == nil || cost.TotalCost <= 0 || (!IsOpenAIAlwaysAdvancedModel(model) && !IsOpenAIAdvancedReasoningEffort(effort)) ||
 		!OpenAIAdvancedQuotaEnabledFor(cfg, user, platform, model) {
 		return 0
 	}
