@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/Wei-Shaw/sub2api/internal/pkg/edgenode"
 	"net"
 	"net/url"
 	"strconv"
@@ -40,6 +41,9 @@ func (p *Proxy) IsExpired(now time.Time) bool {
 }
 
 func (p *Proxy) URL() string {
+	if edgenode.Enabled() {
+		return ""
+	}
 	u := &url.URL{
 		Scheme: p.Protocol,
 		Host:   net.JoinHostPort(p.Host, strconv.Itoa(p.Port)),

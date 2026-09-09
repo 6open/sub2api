@@ -10,6 +10,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/edgenode"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/migrations"
 
@@ -69,8 +70,13 @@ func InitEnt(cfg *config.Config) (*ent.Client, *sql.DB, error) {
 	// 这种方式比 Ent 的自动迁移更可控，支持复杂的迁移场景。
 	migrationCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	if err := applyMigrationsFS(migrationCtx, drv.DB(), migrations.FS); err != nil {
-		_ = drv.Close() // 迁移失败时关闭驱动，避免资源泄露
+	if !edgenode.Enabled() {
+		if err := applyMigrationsFS(migrationCtx, drv.DB(), migrations.FS); err != nil {
+			_ = drv.Close() // 迁移失败时关闭驱动，避免资源泄露
+			return nil, nil, err
+		}
+	} else if err := drv.DB().PingContext(migrationCtx); err != nil {
+		_ = drv.Close()
 		return nil, nil, err
 	}
 
@@ -78,9 +84,11 @@ func InitEnt(cfg *config.Config) (*ent.Client, *sql.DB, error) {
 	client := ent.NewClient(ent.Driver(drv))
 
 	// 启动阶段：从配置或数据库中确保系统密钥可用。
-	if err := ensureBootstrapSecrets(migrationCtx, client, cfg); err != nil {
-		_ = client.Close()
-		return nil, nil, err
+	if !edgenode.Enabled() {
+		if err := ensureBootstrapSecrets(migrationCtx, client, cfg); err != nil {
+			_ = client.Close()
+			return nil, nil, err
+		}
 	}
 
 	// 在密钥补齐后执行完整配置校验，避免空 jwt.secret 导致服务运行时失败。
@@ -105,5 +113,8 @@ func InitEnt(cfg *config.Config) (*ent.Client, *sql.DB, error) {
 		}
 	}
 
+	if edgenode.Enabled() {
+		edgenode.SetDatabase(drv.DB())
+	}
 	return client, drv.DB(), nil
 }

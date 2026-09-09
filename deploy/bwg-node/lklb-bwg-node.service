@@ -1,0 +1,43 @@
+[Unit]
+Description=LKLB backend-only US admin pilot
+After=network-online.target lklb-bwg-tunnel.service
+Requires=lklb-bwg-tunnel.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=lklb-bwg-node
+StateDirectoryMode=0700
+WorkingDirectory=/opt/lklb-bwg-node
+EnvironmentFile=/etc/lklb-bwg-node/node.env
+ExecStart=/opt/lklb-bwg-node/server
+Environment=GOMEMLIMIT=192MiB
+Environment=GOMAXPROCS=1
+Environment=GOGC=50
+MemoryHigh=220M
+MemoryMax=300M
+MemorySwapMax=0
+CPUQuota=75%
+Nice=5
+TasksMax=128
+LimitNOFILE=1024
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=60
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

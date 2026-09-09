@@ -1,0 +1,18 @@
+[Unit]
+Description=Private LKLB database and Redis tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/ssh -NT -i /etc/lklb-bwg-node/tunnel-key -o UserKnownHostsFile=/etc/lklb-bwg-node/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=10 -L 127.0.0.1:25432:127.0.0.1:25432 -L 127.0.0.1:26379:127.0.0.1:26379 admin@139.224.110.98
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+MemoryMax=64M
+MemorySwapMax=0
+
+[Install]
+WantedBy=multi-user.target
