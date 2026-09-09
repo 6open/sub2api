@@ -2,6 +2,11 @@ name: Security Scan
 
 on:
   push:
+    # 排除生产快照分支：这些分支是线上运行代码的固化记录，
+    # 不走 PR 流程，其测试状态不代表代码质量，跑 CI 只会产生噪音。
+    branches-ignore:
+      - 'deploy/**'
+      - 'dev/**'
   pull_request:
   schedule:
     - cron: '0 3 * * 1'
