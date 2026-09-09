@@ -543,7 +543,7 @@ func TestOpenAIGatewayService_Forward_ImageToolWithImageOnlyModelIsNormalized(t 
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, openAIImagesResponsesMainModel, gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, openAIImagesResponsesMainModel(), gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
 func TestOpenAIGatewayService_Forward_HTTPRetryRecoveryDoesNotDecodeBeforeError(t *testing.T) {
@@ -853,7 +853,7 @@ func TestOpenAIGatewayService_Forward_ImageOnlyModelKeepsSupportedVerbosity(t *t
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "low", gjson.GetBytes(upstream.lastBody, "text.verbosity").String())
-	require.Equal(t, openAIImagesResponsesMainModel, gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, openAIImagesResponsesMainModel(), gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
 func TestExtractOpenAIRequestMetaFromBody(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -34,13 +35,26 @@ const (
 	openAIImagesGenerationsURL = "https://api.openai.com/v1/images/generations"
 	openAIImagesEditsURL       = "https://api.openai.com/v1/images/edits"
 
-	openAIChatGPTStartURL          = "https://chatgpt.com/"
-	openAIChatGPTFilesURL          = "https://chatgpt.com/backend-api/files"
-	openAIImageBackendUserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-	openAIImageMaxDownloadBytes    = 20 << 20 // 20MB per image download
-	openAIImageMaxUploadPartSize   = 20 << 20 // 20MB per multipart upload part
-	openAIImagesResponsesMainModel = "gpt-5.4-mini"
+	openAIChatGPTStartURL        = "https://chatgpt.com/"
+	openAIChatGPTFilesURL        = "https://chatgpt.com/backend-api/files"
+	openAIImageBackendUserAgent  = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+	openAIImageMaxDownloadBytes  = 20 << 20 // 20MB per image download
+	openAIImageMaxUploadPartSize = 20 << 20 // 20MB per multipart upload part
+
+	// ChatGPT 订阅账号在 Codex 通道下不允许调用 gpt-5.4-mini，会返回
+	// "The 'gpt-5.4-mini' model is not supported when using Codex with a ChatGPT account."
+	// 因此 OAuth 生图的驱动模型默认改用 gpt-5.6-sol，并允许通过环境变量覆盖。
+	defaultOpenAIImagesResponsesMainModel = "gpt-5.6-sol"
+	openAIImagesMainModelEnvKey           = "OPENAI_IMAGES_RESPONSES_MAIN_MODEL"
 )
+
+// openAIImagesResponsesMainModel 返回 OAuth 生图链路使用的驱动模型。
+func openAIImagesResponsesMainModel() string {
+	if v := strings.TrimSpace(os.Getenv(openAIImagesMainModelEnvKey)); v != "" {
+		return v
+	}
+	return defaultOpenAIImagesResponsesMainModel
+}
 
 type OpenAIImagesCapability string
 
