@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -33,6 +34,23 @@ func RegisterGatewayRoutes(
 	compositeResolver *service.CompositeRouteResolver,
 	cfg *config.Config,
 ) {
+	edge, edgeErr := handler.NewEdgeControl(h.OpenAIGateway)
+	if edgeErr != nil {
+		slog.Error("edge control unavailable; normal gateway remains enabled")
+	}
+	if edge != nil {
+		control := r.Group("/internal/lklb-edge", edge.Guard, middleware.SessionBindingContext(cfg), middleware.RequestBodyLimit(8<<20))
+		control.POST("/prepare", gin.HandlerFunc(apiKeyAuth), edge.Pilot, edge.Prepare)
+		control.GET("/models", gin.HandlerFunc(apiKeyAuth), edge.Pilot, func(c *gin.Context) {
+			if c.Query("client_version") != "" {
+				h.OpenAIGateway.CodexModels(c)
+				return
+			}
+			h.Gateway.Models(c)
+		})
+		control.POST("/heartbeat", edge.Heartbeat)
+		control.POST("/settle", edge.Settle)
+	}
 	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize)
 	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize)
 	clientRequestID := middleware.ClientRequestID()

@@ -1,0 +1,41 @@
+[Unit]
+Description=LKLB US admin edge gateway
+After=network-online.target lklb-us-link.service
+Wants=lklb-us-link.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+DynamicUser=yes
+StateDirectory=lklb-us-gateway
+StateDirectoryMode=0700
+LoadCredential=config:/etc/lklb-us-gateway/config.json
+ExecStart=/opt/lklb-us-gateway/gateway -config %d/config
+Environment=GOMEMLIMIT=192MiB
+Environment=GOGC=50
+Environment=GOMAXPROCS=1
+MemoryHigh=220M
+MemoryMax=300M
+MemorySwapMax=0
+CPUQuota=75%
+Nice=5
+TasksMax=128
+LimitNOFILE=1024
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

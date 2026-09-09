@@ -1,0 +1,15 @@
+[Unit]
+Description=LKLB main-host edge controller container
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/podman start lklb-edge-control
+ExecStop=/usr/bin/podman stop --time 30 lklb-edge-control
+TimeoutStartSec=60
+TimeoutStopSec=45
+
+[Install]
+WantedBy=default.target

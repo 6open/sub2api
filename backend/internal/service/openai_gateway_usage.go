@@ -20,6 +20,10 @@ import (
 
 // OpenAIRecordUsageInput input for recording usage
 type OpenAIRecordUsageInput struct {
+	EdgeRequestID      string
+	EdgeUpstreamStatus int
+	EdgeRateMultiplier *float64
+	PersistEdgeBill    func(*UsageBillingCommand, *UsageLog) error
 	Result             *OpenAIForwardResult
 	APIKey             *APIKey
 	User               *User
@@ -135,7 +139,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if result == nil {
 		return errors.New("openai usage result is nil")
 	}
-	if s.rateLimitService != nil && input.Account != nil && input.Account.Platform == PlatformOpenAI {
+	if s.rateLimitService != nil && input.Account != nil && input.Account.Platform == PlatformOpenAI && (input.EdgeRequestID == "" || input.EdgeUpstreamStatus < 400) {
 		s.rateLimitService.ResetOpenAI403Counter(ctx, input.Account.ID)
 	}
 
@@ -173,6 +177,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		multiplier = s.ResolveUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, apiKey.Group.RateMultiplier)
 	}
 	// token 倍率叠加高峰因子（token 计费含图片 token，图片按次倍率不受影响）。
+	if input.EdgeRateMultiplier != nil {
+		multiplier = *input.EdgeRateMultiplier
+	}
 	// 高峰因子按请求级 PricingAt 现算（与利润门 D 同源同刻，跨峰谷请求不中途
 	// 变价）；未装配 PricingAt 的路径回退记录时刻，保持既有行为。不并入上面的
 	// Resolve，以免污染 user:group 倍率缓存。
@@ -285,6 +292,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	durationMs := int(result.Duration.Milliseconds())
 	accountRateMultiplier := account.BillingRateMultiplier()
 	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
+	if input.EdgeRequestID != "" {
+		requestID = input.EdgeRequestID
+	}
 	if result.OpenAIWSMode {
 		if upstreamRequestID := strings.TrimSpace(result.RequestID); upstreamRequestID != "" {
 			requestID = upstreamRequestID
@@ -440,6 +450,18 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		quotaPlatform = PlatformFromAPIKey(apiKey)
 	}
 
+	if input.EdgeRequestID != "" {
+		if input.PersistEdgeBill == nil {
+			return errors.New("edge billing persistence required")
+		}
+		cmd := buildUsageBillingCommand(requestID, usageLog, &postUsageBillingParams{
+			Cost: cost, User: user, APIKey: apiKey, Account: account, Subscription: subscription,
+			RequestPayloadHash: input.RequestPayloadHash, IsSubscriptionBill: isSubscriptionBilling,
+			AccountRateMultiplier: accountRateMultiplier, APIKeyService: input.APIKeyService, Platform: quotaPlatform,
+		})
+		cmd.Normalize()
+		return input.PersistEdgeBill(cmd, usageLog)
+	}
 	billingErr := func() error {
 		_, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
 			Cost:                  cost,

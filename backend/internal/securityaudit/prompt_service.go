@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/edgebridge"
 	"io"
 	"net"
 	"net/http"
@@ -62,6 +63,9 @@ func (s *PromptService) Start(ctx context.Context) error {
 	s.background, s.cancel = background, cancel
 	s.lifecycleMu.Unlock()
 	configErr := s.config.Start(background)
+	if edgebridge.ControlOnly() {
+		return configErr
+	}
 	workerErr := s.runner.Start(background)
 	return errors.Join(configErr, workerErr)
 }

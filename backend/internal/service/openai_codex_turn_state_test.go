@@ -41,6 +41,18 @@ func TestOpenAICodexTurnStateSeed(t *testing.T) {
 	require.Empty(t, openAICodexTurnStateSeed(nil))
 }
 
+func TestEdgeTurnStateTracksOwningAccount(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	c, _ := newTurnStateTestContext(t, 108, "edge-session")
+	svc.TrackEdgeTurnState(c, &Account{ID: 6})
+	h := http.Header{}
+	h.Set("X-Codex-Turn-State", "opaque-state")
+	svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 6}, h)
+	require.Equal(t, "opaque-state", h.Get("X-Codex-Turn-State"))
+	svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 9}, h)
+	require.Empty(t, h.Get("X-Codex-Turn-State"))
+}
+
 func TestRelayOpenAICodexTurnState_SetsHeaderAndRecordsProvenance(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 42}

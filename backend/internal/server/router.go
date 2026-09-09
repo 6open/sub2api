@@ -8,6 +8,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/edgebridge"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/server/routes"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -37,6 +38,27 @@ func SetupRouter(
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) *gin.Engine {
+	if edgebridge.ControlOnly() {
+		r.Use(middleware2.RequestLogger(), middleware2.SessionBindingContext(cfg), middleware2.Logger())
+		edge, err := handler.NewEdgeControl(handlers.OpenAIGateway)
+		if err != nil || edge == nil {
+			r.GET("/health", func(c *gin.Context) { c.JSON(503, gin.H{"status": "control_unavailable"}) })
+			return r
+		}
+		r.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok", "mode": "edge_control"}) })
+		control := r.Group(edgebridge.Prefix, edge.Guard, middleware2.SessionBindingContext(cfg), middleware2.RequestBodyLimit(edgebridge.MaxBody))
+		control.POST("/prepare", gin.HandlerFunc(apiKeyAuth), edge.Pilot, edge.Prepare)
+		control.GET("/models", gin.HandlerFunc(apiKeyAuth), edge.Pilot, func(c *gin.Context) {
+			if c.Query("client_version") != "" {
+				handlers.OpenAIGateway.CodexModels(c)
+				return
+			}
+			handlers.Gateway.Models(c)
+		})
+		control.POST("/heartbeat", edge.Heartbeat)
+		control.POST("/settle", edge.Settle)
+		return r
+	}
 	middleware2.SetIngressRejectRecorder(opsService)
 	// 缓存 iframe 页面的 origin 列表，用于动态注入 CSP frame-src
 	var cachedFrameOrigins atomic.Pointer[[]string]

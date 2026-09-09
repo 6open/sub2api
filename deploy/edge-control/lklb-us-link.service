@@ -1,0 +1,17 @@
+[Unit]
+Description=Private link to LKLB edge authorization service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/ssh -NT -i /etc/lklb-us-gateway/link-key -o IdentitiesOnly=yes -o UserKnownHostsFile=/etc/lklb-us-gateway/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o ConnectTimeout=10 -L 127.0.0.1:29445:127.0.0.1:18445 admin@139.224.110.98
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/edgebridge"
 	"log/slog"
 	"math/rand/v2"
 	"sync"
@@ -288,6 +289,8 @@ func (w *AuthCacheInvalidationWorker) Health(ctx context.Context) AuthCacheInval
 
 func ProvideAuthCacheInvalidationWorker(repo AuthCacheInvalidationOutboxRepository, cache APIKeyCache, apiKeyService *APIKeyService) *AuthCacheInvalidationWorker {
 	worker := NewAuthCacheInvalidationWorker(repo, cache, apiKeyService)
-	worker.Start()
+	if !edgebridge.ControlOnly() {
+		worker.Start()
+	}
 	return worker
 }

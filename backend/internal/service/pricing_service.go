@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/edgebridge"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
@@ -189,6 +190,13 @@ func NewPricingService(cfg *config.Config, remoteClient PricingRemoteClient) *Pr
 
 // Initialize 初始化价格服务
 func (s *PricingService) Initialize() error {
+	if edgebridge.ControlOnly() {
+		if err := s.loadPricingData(s.getPricingFilePath()); err != nil {
+			return err
+		}
+		s.startUpdateScheduler()
+		return nil
+	}
 	// 确保数据目录存在
 	if err := os.MkdirAll(s.cfg.Pricing.DataDir, 0755); err != nil {
 		logger.LegacyPrintf("service.pricing", "[Pricing] Failed to create data directory: %v", err)
@@ -218,6 +226,23 @@ func (s *PricingService) Stop() {
 
 // startUpdateScheduler 启动定时更新调度器
 func (s *PricingService) startUpdateScheduler() {
+	if edgebridge.ControlOnly() {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			tick := time.NewTicker(time.Minute)
+			defer tick.Stop()
+			for {
+				select {
+				case <-s.stopCh:
+					return
+				case <-tick.C:
+					_ = s.loadPricingData(s.getPricingFilePath())
+				}
+			}
+		}()
+		return
+	}
 	if s == nil || s.cfg == nil || strings.TrimSpace(s.cfg.Pricing.RemoteURL) == "" {
 		logger.LegacyPrintf("service.pricing", "%s", "[Pricing] Remote sync disabled: pricing remote URL is empty")
 		return

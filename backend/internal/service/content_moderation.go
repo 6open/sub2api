@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/edgebridge"
 	"io"
 	"log/slog"
 	"net/http"
@@ -598,7 +599,9 @@ func NewContentModerationService(
 		for i := 0; i < svc.workerCount; i++ {
 			go svc.worker(i)
 		}
-		go svc.cleanupWorker()
+		if !edgebridge.ControlOnly() {
+			go svc.cleanupWorker()
+		}
 	}
 	return svc
 }

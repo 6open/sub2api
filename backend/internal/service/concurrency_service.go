@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/edgebridge"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
@@ -340,6 +341,31 @@ type UserLoadInfo struct {
 // If the account is at max concurrency, it waits until a slot is available or timeout.
 // Returns a release function that MUST be called when the request completes.
 func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
+	if edge := edgebridge.FromContext(ctx); edge != nil && edge.BeforeAccountSlot != nil {
+		if err := edge.BeforeAccountSlot(accountID); err != nil {
+			return nil, err
+		}
+		cache, ok := s.cache.(LiveConcurrencyCache)
+		if !ok {
+			return nil, errors.New("durable concurrency lease unavailable")
+		}
+		id := "edge:" + edge.ID
+		acquired, err := cache.AcquireLiveLease(ctx, accountID, maxConcurrency, edge.UserID, edge.UserMax, edge.KeyID, id, false)
+		if err != nil {
+			return nil, err
+		}
+		if !acquired {
+			return &AcquireResult{Acquired: false}, nil
+		}
+		return &AcquireResult{Acquired: acquired, ReleaseFunc: func() {
+			if edge.Issued.Load() {
+				return
+			}
+			releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = cache.ReleaseLiveLease(releaseCtx, accountID, edge.UserID, edge.KeyID, id)
+		}}, nil
+	}
 	// If maxConcurrency is 0 or negative, no limit
 	if maxConcurrency <= 0 {
 		return &AcquireResult{
@@ -379,6 +405,11 @@ func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID i
 // If the user is at max concurrency, it waits until a slot is available or timeout.
 // Returns a release function that MUST be called when the request completes.
 func (s *ConcurrencyService) AcquireUserSlot(ctx context.Context, userID int64, maxConcurrency int) (*AcquireResult, error) {
+	// The edge account acquisition atomically enforces both user and account
+	// limits in the existing live-lease namespace, which survives process cleanup.
+	if edgebridge.FromContext(ctx) != nil {
+		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
+	}
 	// If maxConcurrency is 0 or negative, no limit
 	if maxConcurrency <= 0 {
 		return &AcquireResult{
@@ -418,6 +449,9 @@ func (s *ConcurrencyService) AcquireUserSlot(ctx context.Context, userID int64, 
 // applying key-level concurrency limits. It is fail-open: Redis errors are
 // logged and return a no-op release function.
 func (s *ConcurrencyService) TrackAPIKeySlot(ctx context.Context, apiKeyID int64) func() {
+	if edgebridge.FromContext(ctx) != nil {
+		return func() {}
+	}
 	if s == nil || s.cache == nil || apiKeyID <= 0 {
 		return func() {}
 	}

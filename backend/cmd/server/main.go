@@ -18,6 +18,7 @@ import (
 	_ "github.com/Wei-Shaw/sub2api/ent/runtime"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/edgebridge"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
@@ -75,7 +76,7 @@ func main() {
 	}
 
 	// Check if setup is needed
-	if setup.NeedsSetup() {
+	if !edgebridge.ControlOnly() && setup.NeedsSetup() {
 		// Check if auto-setup is enabled (for Docker deployment)
 		if setup.AutoSetupEnabled() {
 			log.Println("Auto setup mode enabled...")
@@ -140,6 +141,9 @@ func runMainServer() {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
 	if cfg.RunMode == config.RunModeSimple {
+		if edgebridge.ControlOnly() {
+			log.Fatal("edge control requires standard billing mode")
+		}
 		log.Println("⚠️  WARNING: Running in SIMPLE mode - billing and quota checks are DISABLED")
 	}
 
