@@ -68,7 +68,7 @@ ssh ali47 "cd /root/lk/sub2api-deploy && \
 
 **迁移文件不可修改。** 已应用的迁移改内容会导致 checksum 不匹配、容器无法启动。新变更一律新建迁移文件。
 镜像 `migo-gpt6-fallback-20260905-final` 和 `migo-key-quota-isolation-20260907` 就因为改了
-`197_channel_monitor_v2_seed_popular_models.sql` 而无法启动，详见 `/tmp/migo-197-handover.md`。
+`197_channel_monitor_v2_seed_popular_models.sql` 而无法启动，详见 `docs/migration-197-incident.md`。
 
 **问题只在重启时暴露。** 迁移校验仅在进程启动时执行，容器持续运行期间不会发现问题。
 所以「换了镜像但没重启」时一切正常，一旦重启就崩溃循环。

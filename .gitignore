@@ -134,6 +134,7 @@ vite.config.js
 docs/*
 !docs/PAYMENT.md
 !docs/PAYMENT_CN.md
+!docs/migration-197-incident.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
 !docs/ASYNC_IMAGE_TASKS.md
 !docs/legal/
